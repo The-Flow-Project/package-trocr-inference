@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15 http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15/pagecontent.xsd">
+    <Metadata>
+        <Creator>Transkribus</Creator>
+        <Created>2023-08-02T15:34:25.957+02:00</Created>
+        <LastChange>2024-01-25T11:59:18.455+01:00</LastChange>
+        <TranskribusMetadata docId="1520131" pageId="58329924" pageNr="3" tsid="145980928" status="GT" userId="175178" imgUrl="https://files.transkribus.eu/Get?id=CRACJWEZZCPMWTUWMTBDFNTA&amp;fileType=view" xmlUrl="https://files.transkribus.eu/Get?id=QEZFXUQWCGBLJHBNRSUBPWSW" imageId="47247685"/>
+    </Metadata>
+    <Page imageFilename="1520131_0003_58329924.jpg" imageWidth="2479" imageHeight="3508">
+        <ReadingOrder>
+            <OrderedGroup id="ro_1706527703892" caption="Regions reading order">
+                <RegionRefIndexed index="0" regionRef="region_1704990799198_450"/>
+                <RegionRefIndexed index="1" regionRef="region_1706180306418_75"/>
+                <RegionRefIndexed index="2" regionRef="r"/>
+                <RegionRefIndexed index="3" regionRef="r_5"/>
+            </OrderedGroup>
+        </ReadingOrder>
+        <TextRegion id="region_1704990799198_450" custom="readingOrder {index:0;} structure {type:DropCapitalZone;}">
+            <Coords points="529,1281 88,1281 88,141 529,141"/>
+        </TextRegion>
+        <TextRegion id="region_1706180306418_75" custom="readingOrder {index:1;} structure {type:DropCapitalZone;}">
+            <Coords points="336,1901 741,1901 662,2161 639,2176 570,2183 549,2195 500,2495 336,2481"/>
+        </TextRegion>
+        <TextRegion id="r" custom="readingOrder {index:2;} structure {type:MainZone;}">
+            <Coords points="2255,1937 543,1937 543,432 2255,432"/>
+            <TextLine id="l" custom="readingOrder {index:0;} abbrev {offset:49; length:2;expansion:en;}">
+                <Coords points="572,491 2174,503 2174,473 572,461"/>
+                <Baseline points="572,491 2174,503"/>
+                <TextEquiv>
+                    <Unicode>Int erste quam den Steden en breff van dem hertogē van Sleswik</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_13" custom="readingOrder {index:1;} abbrev {offset:8; length:2;expansion:en;} abbrev {offset:15; length:1;expansion:ick;} abbrev {offset:36; length:1;expansion:sen;} abbrev {offset:44; length:2;expansion:ost;} abbrev {offset:51; length:1;expansion:tationem;} abbrev {offset:55; length:1;expansion:cetera;}">
+                <Coords points="566,563 2138,572 2138,542 566,533"/>
+                <Baseline points="566,563 2138,572"/>
+                <TextEquiv>
+                    <Unicode>vnd Greuē HinrꝬ van Holsten van desß lude po̧ Saluꝷ etꝬ</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_17" custom="readingOrder {index:2;} abbrev {offset:5; length:2;expansion:en;} abbrev {offset:16; length:2;expansion:un;} abbrev {offset:43; length:2;expansion:vm;}">
+                <Coords points="569,634 2153,646 2153,616 569,604"/>
+                <Baseline points="569,634 2153,646"/>
+                <TextEquiv>
+                    <Unicode>Erlikē guden vrūde alzo iw wol witlik ys v̄me den recht dach den</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_21" custom="readingOrder {index:3;} abbrev {offset:14; length:2;expansion:in;} abbrev {offset:20; length:2;expansion:an;} abbrev {offset:28; length:2;expansion:ma;} abbrev {offset:41; length:2;expansion:un;} abbrev {offset:49; length:2;expansion:an;}">
+                <Coords points="560,700 2097,712 2097,682 560,670"/>
+                <Baseline points="560,700 2097,712"/>
+                <TextEquiv>
+                    <Unicode>wy mit dem Konīge vā Dennemͣrken vppe sūte Johānis dach to</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_25" custom="readingOrder {index:4;} abbrev {offset:9; length:2;expansion:er;} abbrev {offset:22; length:2;expansion:en;} abbrev {offset:31; length:2;expansion:en;} abbrev {offset:40; length:2;expansion:en;} abbrev {offset:57; length:2;expansion:in;}">
+                <Coords points="563,756 2135,774 2136,744 563,726"/>
+                <Baseline points="563,756 2135,774"/>
+                <TextEquiv>
+                    <Unicode>middensomẻ negest komēde holdē schullē na der vorrannīge der</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_29" custom="readingOrder {index:5;} abbrev {offset:22; length:2;expansion:en;} abbrev {offset:33; length:2;expansion:en;}">
+                <Coords points="551,837 2099,843 2100,813 551,807"/>
+                <Baseline points="551,837 2099,843"/>
+                <TextEquiv>
+                    <Unicode>degedinge alze gy suluē vorramedē also dat vnser en Jewelik</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_33" custom="readingOrder {index:6;} abbrev {offset:20; length:2;expansion:en;} abbrev {offset:41; length:2;expansion:en;}">
+                <Coords points="560,896 2082,914 2082,884 560,866"/>
+                <Baseline points="560,896 2082,914"/>
+                <TextEquiv>
+                    <Unicode>vor schedeslude hebbē scal twe vrome herē vnd veer Stede vte</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_37" custom="readingOrder {index:7;} abbrev {offset:35; length:1;expansion:ick;} abbrev {offset:43; length:2;expansion:en;} abbrev {offset:50; length:2;expansion:en;} abbrev {offset:57; length:2;expansion:en;}">
+                <Coords points="545,968 2126,971 2126,971 2126,941 2126,941 545,938"/>
+                <Baseline points="545,968 2126,971 2126,971"/>
+                <TextEquiv>
+                    <Unicode>der hense des hebbe wy hertoge HinrꝬ by velē Stedē suluē geweß</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_41" custom="readingOrder {index:8;} abbrev {offset:22; length:2;expansion:vm;} abbrev {offset:60; length:2;expansion:un;}">
+                <Coords points="548,1027 2165,1051 2165,1021 548,997"/>
+                <Baseline points="548,1027 2165,1051"/>
+                <TextEquiv>
+                    <Unicode>vnd vnse Bodeshop dar v̄me vor vnd na gehad, vnd de Stede vrūt-</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_45" custom="readingOrder {index:9;} abbrev {offset:3; length:2;expansion:en;} abbrev {offset:11; length:2;expansion:en;} abbrev {offset:26; length:2;expansion:an;} abbrev {offset:31; length:1;expansion:ßer;} abbrev {offset:51; length:2;expansion:en;} abbrev {offset:58; length:2;expansion:en;} abbrev {offset:62; length:2;expansion:en;}">
+                <Coords points="548,1099 2141,1126 2142,1096 548,1069"/>
+                <Baseline points="548,1099 2141,1126"/>
+                <TextEquiv>
+                    <Unicode>likē gebedē dat se dat vā vnß wegen to sik genomē haddē wēte</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_49" custom="readingOrder {index:10;} abbrev {offset:5; length:1;expansion:ßer;} abbrev {offset:12; length:1;expansion:es;} abbrev {offset:20; length:1;expansion:ßer;} abbrev {offset:25; length:2;expansion:en;} abbrev {offset:34; length:2;expansion:un;} abbrev {offset:45; length:2;expansion:en;} abbrev {offset:60; length:2;expansion:en;}">
+                <Coords points="545,1173 2147,1188 2147,1158 545,1143"/>
+                <Baseline points="545,1173 2147,1188"/>
+                <TextEquiv>
+                    <Unicode>se vnß rechtꝬ vnd vnß herē vnd vrūde schuldē mechtich wesē dar</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_53" custom="readingOrder {index:11;} abbrev {offset:24; length:2;expansion:an;} abbrev {offset:36; length:2;expansion:en;}">
+                <Coords points="542,1242 2126,1257 2127,1227 542,1212"/>
+                <Baseline points="542,1242 2126,1257"/>
+                <TextEquiv>
+                    <Unicode>vns doch nyne antworde vā wedderuarē konde, dat se dat yenige</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_57" custom="readingOrder {index:12;} abbrev {offset:10; length:1;expansion:ßer;} abbrev {offset:29; length:2;expansion:en;} abbrev {offset:36; length:2;expansion:en;} abbrev {offset:50; length:2;expansion:un;}">
+                <Coords points="542,1313 2097,1328 2097,1298 542,1283"/>
+                <Baseline points="542,1313 2097,1328"/>
+                <TextEquiv>
+                    <Unicode>wys van vnß wegen to sik, nemē woldē Bidde wy vrūtliken</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_61" custom="readingOrder {index:13;} abbrev {offset:53; length:2;expansion:en;}">
+                <Coords points="545,1388 2094,1394 2094,1364 545,1358"/>
+                <Baseline points="545,1388 2094,1394"/>
+                <TextEquiv>
+                    <Unicode>mit gantzen vlyte dat gy veer Stede dar to vogen willē de</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_65" custom="readingOrder {index:14;} abbrev {offset:1; length:2;expansion:uer;} abbrev {offset:18; length:2;expansion:en;}">
+                <Coords points="545,1453 2168,1462 2168,1432 545,1423"/>
+                <Baseline points="545,1453 2168,1462"/>
+                <TextEquiv>
+                    <Unicode>oủ vnsen degedingē stan vnd efft des vehoff ys vnse schedeslude</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_69" custom="readingOrder {index:15;} abbrev {offset:23; length:2;expansion:en;} abbrev {offset:32; length:2;expansion:un;}">
+                <Coords points="542,1522 2091,1531 2091,1501 542,1492"/>
+                <Baseline points="542,1522 2091,1531"/>
+                <TextEquiv>
+                    <Unicode>wesen moge mit vnse herē vnd vrūden alzo des vorramet ys</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_73" custom="readingOrder {index:16;}">
+                <Coords points="554,1596 2126,1590 2126,1560 554,1566"/>
+                <Baseline points="554,1596 2126,1590"/>
+                <TextEquiv>
+                    <Unicode>vppe dat dat an vns in dem rechtdage vnd rechtgange nen ge-</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_77" custom="readingOrder {index:17;} abbrev {offset:38; length:2;expansion:un;} abbrev {offset:44; length:2;expansion:en;} abbrev {offset:62; length:2;expansion:en;}">
+                <Coords points="545,1662 2123,1674 2124,1644 545,1632"/>
+                <Baseline points="545,1662 2123,1674"/>
+                <TextEquiv>
+                    <Unicode>brek enwerde, dat wille wy allewege vrūtlikē mit iw vorsculdē</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_81" custom="readingOrder {index:18;} abbrev {offset:10; length:2;expansion:en;} abbrev {offset:17; length:2;expansion:en;} abbrev {offset:33; length:2;expansion:un;} abbrev {offset:45; length:1;expansion:reuen;} abbrev {offset:63; length:2;expansion:en;}">
+                <Coords points="551,1739 2153,1751 2153,1721 551,1709"/>
+                <Baseline points="551,1739 2153,1751"/>
+                <TextEquiv>
+                    <Unicode>wor wy mogē Biddēde des Juwe vrūtlike bescȓ antworde by dessē</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_85" custom="readingOrder {index:19;} abbrev {offset:11; length:2;expansion:en;} abbrev {offset:39; length:2;expansion:en;}">
+                <Coords points="554,1805 2120,1823 2121,1793 554,1775"/>
+                <Baseline points="554,1805 2120,1823"/>
+                <TextEquiv>
+                    <Unicode>yegenwordigē boden war wy to tyden mogē Syt gode beuolen</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_89" custom="readingOrder {index:20;} abbrev {offset:2; length:1;expansion:reuen;} abbrev {offset:24; length:2;expansion:en;} abbrev {offset:26; length:2;expansion:des;} abbrev {offset:46; length:1;expansion:ser;} abbrev {offset:59; length:1;expansion:segel;}">
+                <Coords points="539,1885 2156,1894 2156,1864 539,1855"/>
+                <Baseline points="539,1885 2156,1894"/>
+                <TextEquiv>
+                    <Unicode>Scȓ to Sleswik des Sonauēḑ vor viti vnder vnß beider Jngeß</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextEquiv>
+                <Unicode>Int erste quam den Steden en breff van dem hertogē van Sleswik&#13;
+vnd Greuē HinrꝬ van Holsten van desß lude po̧ Saluꝷ etꝬ&#13;
+Erlikē guden vrūde alzo iw wol witlik ys v̄me den recht dach den&#13;
+wy mit dem Konīge vā Dennemͣrken vppe sūte Johānis dach to&#13;
+middensomẻ negest komēde holdē schullē na der vorrannīge der&#13;
+degedinge alze gy suluē vorramedē also dat vnser en Jewelik&#13;
+vor schedeslude hebbē scal twe vrome herē vnd veer Stede vte&#13;
+der hense des hebbe wy hertoge HinrꝬ by velē Stedē suluē geweß&#13;
+vnd vnse Bodeshop dar v̄me vor vnd na gehad, vnd de Stede vrūt-&#13;
+likē gebedē dat se dat vā vnß wegen to sik genomē haddē wēte&#13;
+se vnß rechtꝬ vnd vnß herē vnd vrūde schuldē mechtich wesē dar&#13;
+vns doch nyne antworde vā wedderuarē konde, dat se dat yenige&#13;
+wys van vnß wegen to sik, nemē woldē Bidde wy vrūtliken&#13;
+mit gantzen vlyte dat gy veer Stede dar to vogen willē de&#13;
+oủ vnsen degedingē stan vnd efft des vehoff ys vnse schedeslude&#13;
+wesen moge mit vnse herē vnd vrūden alzo des vorramet ys&#13;
+vppe dat dat an vns in dem rechtdage vnd rechtgange nen ge-&#13;
+brek enwerde, dat wille wy allewege vrūtlikē mit iw vorsculdē&#13;
+wor wy mogē Biddēde des Juwe vrūtlike bescȓ antworde by dessē&#13;
+yegenwordigē boden war wy to tyden mogē Syt gode beuolen&#13;
+Scȓ to Sleswik des Sonauēḑ vor viti vnder vnß beider Jngeß</Unicode>
+            </TextEquiv>
+        </TextRegion>
+        <TextRegion id="r_5" custom="readingOrder {index:3;} structure {type:MainZone;}">
+            <Coords points="2249,3000 529,3000 546,2197 549,2205 670,2175 696,2079 2249,2076"/>
+            <TextLine id="l_93" custom="readingOrder {index:0;} abbrev {offset:20; length:2;expansion:en;} abbrev {offset:26; length:2;expansion:en;} abbrev {offset:31; length:2;expansion:un;}">
+                <Coords points="610,2147 2088,2180 2088,2150 611,2117"/>
+                <Baseline points="610,2147 2088,2180"/>
+                <TextEquiv>
+                    <Unicode>Post Salutatoz Ersamē gudē vrūde Jw mach wol vordenke</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_97" custom="readingOrder {index:1;} abbrev {offset:18; length:2;expansion:vm;} abbrev {offset:32; length:2;expansion:en;} abbrev {offset:44; length:2;expansion:en;} abbrev {offset:55; length:2;expansion:en;} abbrev {offset:59; length:2;expansion:er;} abbrev {offset:67; length:2;expansion:en;}">
+                <Coords points="554,2225 2114,2242 2115,2212 554,2195"/>
+                <Baseline points="554,2225 2114,2242"/>
+                <TextEquiv>
+                    <Unicode>wo wy an vortyden v̄me zake willē de wy Jegē de Holstē hẻn hebbē</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_101" custom="readingOrder {index:2;} abbrev {offset:9; length:2;expansion:un;} abbrev {offset:21; length:2;expansion:en;} abbrev {offset:31; length:2;expansion:en;} abbrev {offset:59; length:2;expansion:en;} abbrev {offset:66; length:2;expansion:en;}">
+                <Coords points="545,2293 2138,2311 2139,2281 545,2263"/>
+                <Baseline points="545,2293 2138,2311"/>
+                <TextEquiv>
+                    <Unicode>iw mit vrūtliken bedē esschedē dat gy etlike van iw hebbē woldē</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_105" custom="readingOrder {index:3;} abbrev {offset:18; length:2;expansion:an;}">
+                <Coords points="542,2362 2091,2385 2091,2355 542,2332"/>
+                <Baseline points="542,2362 2091,2385"/>
+                <TextEquiv>
+                    <Unicode>mit vuller macht vā iuwer aller wegen to Sleswik vppe de tyd</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_109" custom="readingOrder {index:4;} abbrev {offset:47; length:2;expansion:en;}">
+                <Coords points="552,2420 2091,2455 2091,2425 553,2390"/>
+                <Baseline points="552,2420 2091,2455"/>
+                <TextEquiv>
+                    <Unicode>alze wy vnd vnse ome dar lateste vorgaddert werē dat gy dat</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_113" custom="readingOrder {index:5;} abbrev {offset:9; length:2;expansion:en;} abbrev {offset:20; length:2;expansion:en;} abbrev {offset:39; length:2;expansion:un;} abbrev {offset:52; length:2;expansion:en;}">
+                <Coords points="540,2492 2120,2527 2120,2497 540,2462"/>
+                <Baseline points="540,2492 2120,2527"/>
+                <TextEquiv>
+                    <Unicode>also heldē vnd zandē dar des wy iw vrūtliken dankē vnd dar</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_117" custom="readingOrder {index:6;} abbrev {offset:20; length:2;expansion:en;} abbrev {offset:53; length:1;expansion:reuen;}">
+                <Coords points="546,2571 2126,2595 2126,2565 546,2541"/>
+                <Baseline points="546,2571 2126,2595"/>
+                <TextEquiv>
+                    <Unicode>sulues mede engedregē ward dat wy vnd vnse ome vorscȓ iw </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_121" custom="readingOrder {index:7;} abbrev {offset:24; length:2;expansion:en;} abbrev {offset:33; length:2;expansion:en;} abbrev {offset:52; length:2;expansion:en;}">
+                <Coords points="544,2637 2174,2660 2174,2630 544,2607"/>
+                <Baseline points="544,2637 2174,2660"/>
+                <TextEquiv>
+                    <Unicode>Stede van der hense biddē schuldē dat gy wese woldē to Sleswik</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_125" custom="readingOrder {index:8;} abbrev {offset:18; length:2;expansion:en;} abbrev {offset:26; length:2;expansion:en;} abbrev {offset:33; length:2;expansion:un;} abbrev {offset:40; length:2;expansion:han;} textStyle {offset:53; length:3;superscript:true;} abbrev {offset:53; length:3;expansion:tisten;}">
+                <Coords points="546,2703 2186,2732 2186,2702 546,2673"/>
+                <Baseline points="546,2703 2186,2732"/>
+                <TextEquiv>
+                    <Unicode>nu vppe den negestē tokamēden sūte Joh̄is dach Bapten vnd helpe</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_129" custom="readingOrder {index:9;} abbrev {offset:37; length:1;expansion:reuen;} abbrev {offset:47; length:2;expansion:en;} abbrev {offset:54; length:2;expansion:en;}">
+                <Coords points="563,2786 2167,2802 2168,2772 563,2756"/>
+                <Baseline points="563,2786 2167,2802"/>
+                <TextEquiv>
+                    <Unicode>dar mede to dat wy vnd vnse ome vorscȓ vorschedē wordē by deme</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_133" custom="readingOrder {index:10;} abbrev {offset:7; length:2;expansion:en;}">
+                <Coords points="550,2839 2118,2866 2118,2836 551,2809"/>
+                <Baseline points="550,2839 2118,2866"/>
+                <TextEquiv>
+                    <Unicode>to bliuēde de der vorschedinge vnd dem rechte vuldeit, dar wy de</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="l_137" custom="readingOrder {index:11;} abbrev {offset:3; length:2;expansion:en;}">
+                <Coords points="554,2901 2180,2939 2180,2909 555,2871"/>
+                <Baseline points="554,2901 2180,2939"/>
+                <TextEquiv>
+                    <Unicode>bedē de Stede dar to Sleswik vorgaddert, dat to bringende an iw</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextEquiv>
+                <Unicode>Post Salutatoz Ersamē gudē vrūde Jw mach wol vordenke&#13;
+wo wy an vortyden v̄me zake willē de wy Jegē de Holstē hẻn hebbē&#13;
+iw mit vrūtliken bedē esschedē dat gy etlike van iw hebbē woldē&#13;
+mit vuller macht vā iuwer aller wegen to Sleswik vppe de tyd&#13;
+alze wy vnd vnse ome dar lateste vorgaddert werē dat gy dat&#13;
+also heldē vnd zandē dar des wy iw vrūtliken dankē vnd dar&#13;
+sulues mede engedregē ward dat wy vnd vnse ome vorscȓ iw &#13;
+Stede van der hense biddē schuldē dat gy wese woldē to Sleswik&#13;
+nu vppe den negestē tokamēden sūte Joh̄is dach Bapten vnd helpe&#13;
+dar mede to dat wy vnd vnse ome vorscȓ vorschedē wordē by deme&#13;
+to bliuēde de der vorschedinge vnd dem rechte vuldeit, dar wy de&#13;
+bedē de Stede dar to Sleswik vorgaddert, dat to bringende an iw</Unicode>
+            </TextEquiv>
+        </TextRegion>
+    </Page>
+</PcGts>
