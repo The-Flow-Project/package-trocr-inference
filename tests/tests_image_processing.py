@@ -35,14 +35,14 @@ class TestImageProcessor(unittest.TestCase):
 
     def test_normalize_image(self):
         """Test normalizing an image returns expected tensor shape."""
-        image = self.image_processor.convert_to_rgb(self.test_image_path)  # Load image first
+        image = self.image_processor.convert_to_rgb(self.test_image_path)
         pixel_values = self.image_processor.normalize_image(image)
         self.assertIsInstance(pixel_values, torch.Tensor)
         self.assertEqual(pixel_values.shape[1:], (3, 384, 384))  # Shape may vary based on processor
 
     def test_process_image(self):
         """Test full processing pipeline on a valid image."""
-        with Image.open(self.test_image_path) as image:  # Keep the image open
+        with Image.open(self.test_image_path) as image:
             pixel_values = self.image_processor.process_image(image)
             self.assertIsInstance(pixel_values, torch.Tensor)
 
