@@ -59,3 +59,7 @@ class TrOCRProcessorHandler:
 
     def get_processor(self):
         return self.processor
+
+    def __call__(self, image, return_tensors="pt"):
+        """Makes the handler callable, forwarding the call to the actual processor."""
+        return self.processor(images=image, return_tensors=return_tensors)
