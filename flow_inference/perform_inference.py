@@ -1,4 +1,5 @@
 import os
+from typing import Dict
 
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
@@ -51,22 +52,20 @@ class InferenceHandler:
 
         return pred_str
 
-    def predict_batch(self, dataset):
-        """Predicts text for a batch of images from a dataset."""
-        predictions = []
+    def predict_batch(self, dataset) -> Dict[str, str]:
+        """Predicts text for a batch of images from a dataset and returns a dictionary of predictions."""
+        predictions = {}
 
-        for batch in tqdm(dataset):
+        for idx, batch in tqdm(enumerate(dataset)):
             pixel_values = batch["pixel_values"].to(self.device)
-            outputs = self.model.generate(pixel_values, max_new_tokens=100)
-            pred_strs = self.processor.batch_decode(outputs, skip_special_tokens=True)
 
-            # Extend predictions with both labels and predicted strings
-            predictions.extend(zip(batch["label"], pred_strs))
+            pred_str = self.predict_single_image(pixel_values)
 
-            if len(pred_strs) > 0:
-                print('BATCH PREDICTIONS:')
-                for label, pred in zip(batch["label"], pred_strs):
-                    print(f'{label}: {pred}')
-                print('=' * 100)
+            print(f"Batch label: {batch['label']}")
+            label = batch['label']
+            print(f"Prediction: {pred_str}")
 
+            predictions[label] = pred_str
+
+        print(predictions)
         return predictions

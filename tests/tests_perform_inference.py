@@ -31,8 +31,9 @@ class TestInferenceHandler(unittest.TestCase):
     def setUp(self):
         model = TrOCRModelHandler('microsoft/trocr-small-handwritten').get_model()
         current_dir: str = os.path.dirname(os.path.realpath(__file__))
-        self.test_image_path = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.0.png')
-        self.image_paths = [self.test_image_path, self.test_image_path]
+        self.test_image_path_1 = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.0.png')
+        self.test_image_path_2 = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.1.png')
+        self.image_paths = [self.test_image_path_1, self.test_image_path_2]
         self.trocr_processor = TrOCRProcessorHandler("microsoft/trocr-base-handwritten").get_processor()
         image_processor = ImageProcessor(self.trocr_processor)
         self.dataset = InferenceDataset(self.image_paths, image_processor)
@@ -61,7 +62,18 @@ class TestInferenceHandler(unittest.TestCase):
     def test_predict_batch(self):
         predictions = self.handler.predict_batch(self.dataset)
 
-        self.assertEqual(len(predictions), 2)
+        # Check that predictions is a dictionary
+        self.assertIsInstance(predictions, dict, "Expected predictions to be a dictionary")
+
+        # Check the number of predictions matches the expected number
+        expected_num_predictions = 2
+        self.assertEqual(len(predictions), expected_num_predictions,
+                         f"Expected {expected_num_predictions} predictions, got {len(predictions)}")
+
+        # Check the structure of predictions (keys are labels, values are predicted text strings)
+        for label, prediction in predictions.items():
+            self.assertIsInstance(label, str, f"Expected label to be a string, got {type(label)}")
+            self.assertIsInstance(prediction, str, f"Expected prediction to be a string, got {type(prediction)}")
 
 
 if __name__ == '__main__':
