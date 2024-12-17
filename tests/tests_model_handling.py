@@ -5,8 +5,6 @@ from flow_inference.model_handling import ModelManager
 
 
 class TestModelManager(unittest.TestCase):
-    # --- Device Management Tests ---
-
     @patch('torch.cuda.is_available', return_value=True)
     def test_device_cuda_available(self, _mock_cuda):
         """Test device selection when CUDA is available."""
@@ -14,8 +12,22 @@ class TestModelManager(unittest.TestCase):
         self.assertEqual(model_manager.device.type, 'cuda')
 
     @patch('torch.cuda.is_available', return_value=False)
+    @patch('torch.backends.mps.is_available', return_value=False)
+    def test_device_cuda_and_mps_not_available(self, _mock_mps, _mock_cuda):
+        """Test device selection when neither CUDA nor MPS are available."""
+        model_manager = ModelManager(use_cuda=True)
+        self.assertEqual(model_manager.device.type, 'cpu')
+
+    @patch('torch.cuda.is_available', return_value=False)
+    @patch('torch.backends.mps.is_available', return_value=True)
+    def test_device_mps_available(self, _mock_mps, _mock_cuda):
+        """Test device selection when MPS is available but CUDA is not."""
+        model_manager = ModelManager(use_cuda=True)
+        self.assertEqual(model_manager.device.type, 'mps')
+
+    @patch('torch.cuda.is_available', return_value=False)
     def test_device_cuda_not_available(self, _mock_cuda):
-        """Test device selection when CUDA is not available."""
+        """Test device selection when CUDA is not available and no MPS."""
         model_manager = ModelManager(use_cuda=True)
         self.assertEqual(model_manager.device.type, 'cpu')
 

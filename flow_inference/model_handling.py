@@ -7,7 +7,17 @@ from flow_inference.utils.logging.inference_logger import logger
 class ModelManager:
     """Manages the Loading of the TrOCR model and processor"""
     def __init__(self, use_cuda: bool = True):
-        self.device = torch.device('cuda' if use_cuda and torch.cuda.is_available() else 'cpu')
+        # Check for CUDA first
+        if use_cuda and torch.cuda.is_available():
+            self.device = torch.device('cuda')
+        # Check for MPS if CUDA isn't available
+        elif torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+        # Fallback to CPU if neither CUDA nor MPS is available
+        else:
+            self.device = torch.device('cpu')
+
+        print(f"Using device: {self.device}")
 
     def load_model(self, model_name: str) -> Union[PreTrainedModel, None]:
         """
