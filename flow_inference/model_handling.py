@@ -1,65 +1,54 @@
+from typing import Union
 import torch
-from transformers import VisionEncoderDecoderModel, TrOCRProcessor
+from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel
+from flow_inference.utils.logging.inference_logger import logger
 
 
-class DeviceManager:
-    """Manages the device selection (CPU or CUDA)."""
+class ModelManager:
+    """Manages the Loading of the TrOCR model and processor"""
     def __init__(self, use_cuda: bool = True):
         self.device = torch.device('cuda' if use_cuda and torch.cuda.is_available() else 'cpu')
 
-    def get_device(self):
-        return self.device
+    def load_model(self, model_name: str) -> Union[PreTrainedModel, None]:
+        """
+        Load the TrOCR model.
 
+        :param: model_name: Name or path of the TrOCR model.
 
-class ModelLoader:
-    """Handles the loading of the VisionEncoderDecoderModel."""
-    def __init__(self, model_name: str, device):
-        self.model_name = model_name
-        self.device = device
-        self.model = None
+        :return: PreTrainedModel: The loaded model (a VisionEncoderDecoderModel) or None if it was not loaded.
+        """
+        if model_name:
+            try:
+                logger.info(f"Loading model: {model_name}")
+                model = VisionEncoderDecoderModel.from_pretrained(model_name)
+                model.to(self.device)
+                logger.info(f"Model loaded and moved to {self.device}")
+                return model
+            except (OSError, ValueError) as e:
+                logger.error(f"Failed to load model '{model_name}': {e}")
+                return None
+        else:
+            logger.error(f"The model with name '{model_name}' could not be loaded.")
+            raise ValueError(f"The model with name '{model_name}' could not be loaded.")
 
-    def load_model(self):
-        """Loads the model if it hasn't been loaded already, and moves it to the specified device."""
-        if self.model is None:
-            print(f"Loading model: {self.model_name}")
-            self.model = VisionEncoderDecoderModel.from_pretrained(self.model_name)
-            self.model.to(self.device)
-            print(f"Model loaded and moved to {self.device}")
-        return self.model
+    @staticmethod
+    def load_processor(processor_name: str) -> Union[TrOCRProcessor, None]:
+        """
+        Load the TrOCR processor.
 
+        :param: processor_name: Name or path of the TrOCR processor.
 
-class TrOCRModelHandler:
-    """Central handler for loading the model and managing the device."""
-    def __init__(self, model_name: str, use_cuda: bool = True):
-        self.device_manager = DeviceManager(use_cuda)
-        self.device = self.device_manager.get_device()
-
-        self.model_loader = ModelLoader(model_name, self.device)
-        self.model = self.model_loader.load_model()
-
-    def get_model(self):
-        return self.model
-
-    def get_device(self):
-        return self.device
-
-
-class TrOCRProcessorHandler:
-    """Manages the loading of the TrOCRProcessor."""
-    def __init__(self, processor_name: str = 'microsoft/trocr-base-handwritten'):
-        self.processor_name = processor_name
-        self.processor = self._load_processor()
-
-    def _load_processor(self):
-        """Loads the TrOCRProcessor."""
-        print(f"Loading processor: {self.processor_name}")
-        processor = TrOCRProcessor.from_pretrained(self.processor_name)
-        print(f"Processor {self.processor_name} loaded.")
-        return processor
-
-    def get_processor(self):
-        return self.processor
-
-    def __call__(self, image, return_tensors="pt"):
-        """Makes the handler callable, forwarding the call to the actual processor."""
-        return self.processor(images=image, return_tensors=return_tensors)
+        :return: TrOCRProcessor: The loaded TrOCR processor or None (in case of failure).
+        """
+        if processor_name:
+            try:
+                logger.info(f"Loading processor: {processor_name}")
+                processor = TrOCRProcessor.from_pretrained(processor_name)
+                logger.info(f"Processor {processor_name} loaded.")
+                return processor
+            except (OSError, ValueError) as e:
+                logger.error(f"Failed to load processor '{processor_name}': {e}")
+                return None
+        else:
+            logger.error(f"The processor with name '{processor_name}' could not be loaded.")
+            raise ValueError(f"The processor with name '{processor_name}' could not be loaded.")
