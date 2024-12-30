@@ -22,17 +22,19 @@ class DataHandler:
 
     def fetch_xml_files_from_github(self,
                                     repo_name: str,
+                                    folder_path: str,
                                     download_path: str) -> Tuple[List[str], List[str]]:
         """
         Fetches XML files from GitHub.
 
+        :param folder_path: the folder name in the repository.
         :param repo_name: the name of the GitHub repository the files are fetched from.
         :param download_path: the (local) path the files are downloaded to.
         :return: Tuple consisting of list of files which were downloaded from the GitHub repository and
         list of files which couldn't be downloaded.
         """
         fetched_files = self.github_manager.fetch_files(repo_name,
-                                                        "xml",
+                                                        folder_path,
                                                         ".xml",
                                                         download_path)
         return fetched_files

@@ -16,6 +16,7 @@ class TestDataHandler(unittest.TestCase):
 
     def test_fetch_xml_files_from_github(self):
         self.data_handler.fetch_xml_files_from_github("github-actions-test-organisation/inference_test",
+                                                      "xml",
                                                       self.in_path_github)
 
     def test_push_xml_files_to_github(self):
