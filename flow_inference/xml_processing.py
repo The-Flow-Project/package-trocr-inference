@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as et
 from typing import Dict
+from xml.dom import minidom
 
 
 class XMLProcessor:
@@ -56,7 +57,7 @@ class XMLProcessor:
         unicode_element.text = text
         return text_equiv
 
-    def insert_text_equiv_tags(self, root, inferred_lines: Dict[str, str]):
+    def insert_inferred_lines(self, root, inferred_lines: Dict[str, str]):
         """
         Inserts a <TextEquiv><Unicode>...</Unicode></TextEquiv> tag under each <TextLine>
         element that matches an entry in the inferred_lines dictionary.
@@ -65,21 +66,34 @@ class XMLProcessor:
             root (ElementTree.Element): Root element of the XML tree.
             inferred_lines (dict): Dictionary with labels and text.
         """
+        modified_inferred_lines = {key.split('.')[1] if '.' in key else key: value for key, value in
+                                   inferred_lines.items()}
         for text_line in root.findall(f".//{self.xmlns}TextLine"):  # Iterate over <TextLine> elements
             line_id = text_line.get("id")  # Extract the 'id' attribute of the <TextLine>
-            if line_id in inferred_lines:
+            if line_id in modified_inferred_lines.keys():
                 # Create the <TextEquiv> element
-                text_equiv = self.create_text_equiv_element(inferred_lines[line_id])
+                text_equiv = self.create_text_equiv_element(modified_inferred_lines[line_id])
                 # Append the <TextEquiv> element to the <TextLine>
                 text_line.append(text_equiv)
 
     @staticmethod
     def save_xml(tree, output_path):
         """
-        Saves the modified XML tree to a file.
+        Saves the modified XML tree to a file with pretty-printing.
 
         Args:
             tree (ElementTree.ElementTree): The XML tree.
             output_path (str): Path to save the XML file.
         """
-        tree.write(output_path, encoding="utf-8", xml_declaration=True)
+        # Convert the ElementTree to a string
+        xml_str = et.tostring(tree.getroot(), encoding="utf-8").decode("utf-8")
+
+        # Pretty print the XML using minidom
+        xml_str_pretty = minidom.parseString(xml_str).toprettyxml(indent="    ")  # 4 spaces indentation
+
+        # Remove extra blank lines from the pretty-printed string
+        xml_str_pretty = "\n".join([line for line in xml_str_pretty.splitlines() if line.strip()])
+
+        # Write the cleaned up, pretty-printed XML string to the file
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(xml_str_pretty)

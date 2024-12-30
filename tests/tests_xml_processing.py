@@ -83,7 +83,7 @@ class TestXMLProcessor(unittest.TestCase):
         root = tree.getroot()
         namespace = root.tag.split("}")[0].strip("{")
         ns = {'ns': namespace}
-        processor.insert_text_equiv_tags(root, inferred_lines)
+        processor.insert_inferred_lines(root, inferred_lines)
 
         # Save the updated tree to a temporary file
         temp_file = "/tmp/test_output.xml"
@@ -120,7 +120,7 @@ class TestXMLProcessor(unittest.TestCase):
         inferred_lines = {"line_1452904354230_8": "den Schoppfen des gerichtes der stat zu Wyen",
                           "line_1452904384999_9": "L fre vns hat fürgelegt heinr Trospg vns burger , wie daz "}
         processor = XMLProcessor(self.test_xml_without_inference_escriptorium)
-        processor.insert_text_equiv_tags(root, inferred_lines)
+        processor.insert_inferred_lines(root, inferred_lines)
 
         # Save to a new file
         processor.save_xml(tree, self.output_path)
