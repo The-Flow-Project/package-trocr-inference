@@ -10,10 +10,10 @@ class ImageHandler:
     """
     def __init__(
             self, 
-            processor: TrOCRProcessor, 
-            image_size: Tuple[int, int] = (384, 384), 
-            do_resize: bool = False, 
-            aspect_ratio_resize: bool = False
+            processor: TrOCRProcessor,
+            image_size: Tuple[int, int],
+            do_resize: bool,
+            aspect_ratio_resize: bool
             ):
         """
 
