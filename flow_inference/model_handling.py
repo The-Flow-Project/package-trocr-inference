@@ -6,7 +6,7 @@ from flow_inference.utils.logging.inference_logger import logger
 
 class ModelManager:
     """Manages the Loading of the TrOCR model and processor"""
-    def __init__(self, use_cuda: bool = True):
+    def __init__(self, use_cuda):
         # Check for CUDA first
         if use_cuda and torch.cuda.is_available():
             self.device = torch.device('cuda')
