@@ -1,0 +1,1 @@
+test_image.jpg This is a test inference result.
