@@ -11,7 +11,7 @@ from flow_inference.infer_textlines import InferenceHandler
 class TestInferenceHandler(unittest.TestCase):
 
     def setUp(self):
-        model_manager = ModelManager()
+        model_manager = ModelManager(use_cuda=False)
         model = model_manager.load_model('microsoft/trocr-small-handwritten')
         processor = model_manager.load_processor("microsoft/trocr-base-handwritten")
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -21,7 +21,10 @@ class TestInferenceHandler(unittest.TestCase):
         self.test_image_path_1 = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.0.png')
         self.test_image_path_2 = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.1.png')
         self.image_paths = [self.test_image_path_1, self.test_image_path_2]
-        self.image_handler = ImageHandler(processor)
+        self.image_handler = ImageHandler(processor=processor,
+                                          image_size=(384, 384),
+                                          do_resize=False,
+                                          aspect_ratio_resize=False)
 
     def test_inference(self):
         # Set up the inference dataset

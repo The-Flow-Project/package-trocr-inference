@@ -75,11 +75,11 @@ class InferenceHandler:
 
         return inferred_txt
 
-    def inference(self,
-                  file_names: List[str],
-                  image_handler: ImageHandler,
-                  **kwargs,
-                  ) -> List[str]:
+    def infer(self,
+              file_names: List[str],
+              image_handler: ImageHandler,
+              **kwargs,
+              ) -> List[str]:
         """
         Run the inference for a dataset.
 
