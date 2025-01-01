@@ -1,52 +1,67 @@
+# ===============================================================================
+# IMPORT STATEMENTS
+# ===============================================================================
 import xml.etree.ElementTree as et
-from typing import Dict
+from typing import Dict, Optional
 from xml.dom import minidom
+from xml.etree.ElementTree import ElementTree, Element
 
 
+# ===============================================================================
+# CLASS
+# ===============================================================================
 class XMLProcessor:
-    def __init__(self, xml_file):
-        self.tree = et.parse(xml_file)
+    def __init__(self, xml_file: str) -> None:
+        """
+        Initializes the XMLProcessor with the specified XML file.
+
+        :param: xml_file (str): Path to the XML file to process.
+        :returns: None.
+        """
+        try:
+            self.tree = et.parse(xml_file)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"XML file '{xml_file}' not found.") from e
+        except et.ParseError as e:
+            raise ValueError(f"Error parsing XML file '{xml_file}': {e}") from e
+
         self.root = self.tree.getroot()
         self.namespace_uri = self.root.tag.split('}')[0][1:]
         self.namespace = {'prefix': self.namespace_uri}
-        self.xmlns = '{' + self.namespace_uri + '}'
+        self.xmlns = f'{{{self.namespace_uri}}}'
 
     @staticmethod
-    def parse_xml(xml_path):
+    def parse_xml(xml_path: str) -> ElementTree:
         """
         Parses an XML file and returns the root element.
 
-        Args:
-            xml_path (str): Path to the XML file.
-
-        Returns:
-            ElementTree.Element: Root element of the XML tree.
+        :param: Path to the XML file.
+        :returns: Root element of the XML tree.
         """
-        tree = et.parse(xml_path)
-        return tree
+        try:
+            return et.parse(xml_path)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"File '{xml_path}' not found.") from e
+        except et.ParseError as e:
+            raise ValueError(f"Failed to parse XML file '{xml_path}': {e}") from e
 
     @staticmethod
-    def find_line_id(text_line):
+    def find_line_id(text_line: Element) -> Optional[str]:
         """
         Extracts the line ID from a <TextLine> element.
 
-        Args:
-            text_line (ElementTree.Element): The <TextLine> element.
-
-        Returns:
-            str: The extracted line ID, or None if not found.
+        :param: text_line (ElementTree.Element): The <TextLine> element.
+        :returns: The extracted line ID, or None if not found.
         """
         return text_line.get('id')
 
-    def create_text_equiv_element(self, text):
+    def create_text_equiv_element(self, text: str) -> Element:
         """
         Creates a <TextEquiv> element with a <Unicode> child containing the provided text.
 
-        Args:
-            text (str): The text to insert into the <Unicode> element.
+        :param: The text to insert into the <Unicode> element.
 
-        Returns:
-            ElementTree.Element: The created <TextEquiv> element.
+        :returns: ElementTree.Element: The created <TextEquiv> element.
         """
         # Create <TextEquiv> and <Unicode> with namespace
         ns_tag_text_equiv = f"{self.xmlns}TextEquiv"
@@ -71,29 +86,23 @@ class XMLProcessor:
         for text_line in root.findall(f".//{self.xmlns}TextLine"):  # Iterate over <TextLine> elements
             line_id = text_line.get("id")  # Extract the 'id' attribute of the <TextLine>
             if line_id in modified_inferred_lines.keys():
-                # Create the <TextEquiv> element
                 text_equiv = self.create_text_equiv_element(modified_inferred_lines[line_id])
-                # Append the <TextEquiv> element to the <TextLine>
                 text_line.append(text_equiv)
 
     @staticmethod
-    def save_xml(tree, output_path):
+    def save_xml(tree: ElementTree, output_path: str) -> None:
         """
         Saves the modified XML tree to a file with pretty-printing.
 
-        Args:
-            tree (ElementTree.ElementTree): The XML tree.
-            output_path (str): Path to save the XML file.
+        :param: The XML tree.
+        :param: Path to save the XML file.
         """
-        # Convert the ElementTree to a string
-        xml_str = et.tostring(tree.getroot(), encoding="utf-8").decode("utf-8")
+        try:
+            xml_str = et.tostring(tree.getroot(), encoding="utf-8").decode("utf-8")
+            xml_str_pretty = minidom.parseString(xml_str).toprettyxml(indent="    ")
+            xml_str_pretty = "\n".join(line for line in xml_str_pretty.splitlines() if line.strip())
 
-        # Pretty print the XML using minidom
-        xml_str_pretty = minidom.parseString(xml_str).toprettyxml(indent="    ")  # 4 spaces indentation
-
-        # Remove extra blank lines from the pretty-printed string
-        xml_str_pretty = "\n".join([line for line in xml_str_pretty.splitlines() if line.strip()])
-
-        # Write the cleaned up, pretty-printed XML string to the file
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(xml_str_pretty)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(xml_str_pretty)
+        except IOError as e:
+            raise IOError(f"Error saving XML to '{output_path}': {e}") from e

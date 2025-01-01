@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15 http://schema.primaresearch.org/PAGE/gts/pagecontent/2013-07-15/pagecontent.xsd">
+    <Metadata>
+        <Creator>prov=University of Rostock/Institute of Mathematics/CITlab|PLANET AI GmbH/Tobias Gruening/tobias.gruening@planet-ai.de:name=/net_tf/LA73_249_0mod360.pb:de.uros.citlab.segmentation.CITlab_LA_ML:v=2.6.7
+prov=University of Rostock/Institute of Mathematics/CITlab|PLANET AI GmbH/Tobias Gruening/tobias.gruening@planet-ai.de:name=/net_tf/LA73_249_0mod360.pb:de.uros.citlab.segmentation.CITlab_LA_ML:v=2.6.7
+Transkribus</Creator>
+        <Created>2022-09-16T01:28:42.598+02:00</Created>
+        <LastChange>2022-09-16T01:52:20.116+02:00</LastChange>
+        <TranskribusMetadata docId="1155140" pageId="47389007" pageNr="1" tsid="95657134" status="GT" userId="74452" imgUrl="https://files.transkribus.eu/Get?id=GMFSOXFVZKPLGWNTXBYUMQOB&amp;fileType=view" xmlUrl="https://files.transkribus.eu/Get?id=VCNHCIEFMBWPHLUMKXHYRLYB" imageId="38701532"/>
+    </Metadata>
+    <Page imageFilename="1155140_0001_47389007.JPG" imageWidth="1536" imageHeight="2048">
+        <ReadingOrder>
+            <OrderedGroup id="ro_1700127548674" caption="Regions reading order">
+                <RegionRefIndexed index="0" regionRef="TextRegion_1663284780281_22"/>
+                <RegionRefIndexed index="1" regionRef="TextRegion_1663284780281_23"/>
+            </OrderedGroup>
+        </ReadingOrder>
+        <TextRegion orientation="0.0" id="TextRegion_1663284780281_22" custom="readingOrder {index:0;}">
+            <Coords points="305,336 1081,336 1081,742 305,742"/>
+            <TextLine id="TextRegion_1663284780281_22l1" custom="readingOrder {index:0;}">
+                <Coords points="323,374 359,373 395,373 431,373 467,374 503,375 539,377 575,379 611,381 647,384 684,386 720,389 756,391 792,394 828,396 864,398 900,400 936,402 972,403 1008,404 1045,405 1045,375 1008,374 972,373 936,372 900,370 864,368 828,366 792,364 756,361 720,359 684,356 647,354 611,351 575,349 539,347 503,345 467,344 431,343 395,343 359,343 323,344"/>
+                <Baseline points="323,364 359,363 395,363 431,363 467,364 503,365 539,367 575,369 611,371 647,374 684,376 720,379 756,381 792,384 828,386 864,388 900,390 936,392 972,393 1008,394 1045,395"/>
+                <TextEquiv>
+                    <Unicode>Galfridus Fresel et Johanna vxor eius per attornatos suos petunt uersus Herbertum de Bexvilla terciam partem manerii </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l2" custom="readingOrder {index:1;} gap {offset:72; length:0;Length:3;}">
+                <Coords points="325,399 361,399 398,399 434,400 471,401 508,402 544,403 581,405 618,407 654,409 691,411 728,414 764,416 801,418 838,420 874,423 911,425 948,426 984,429 1021,430 1058,431 1058,401 1021,400 984,399 948,396 911,395 874,393 838,390 801,388 764,386 728,384 691,381 654,379 618,377 581,375 544,373 508,372 471,371 434,370 398,369 361,369 325,369"/>
+                <Baseline points="325,389 361,389 398,389 434,390 471,391 508,392 544,393 581,395 618,397 654,399 691,401 728,404 764,406 801,408 838,410 874,413 911,415 948,416 984,419 1021,420 1058,421"/>
+                <TextEquiv>
+                    <Unicode>de Terling‧ Et uersus Hubertum de Terling terciam partem sex Marcatarum  redditus cum pertinenciis in Herton ‧ Et uersus </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="line_1663284857722_42" custom="readingOrder {index:2;}">
+                <Coords points="317,393 458,394 517,395 577,397 637,400 1058,428 1064,451 568,424 406,420 317,417"/>
+                <Baseline points="326,412 370,415 406,419 458,414 487,415 517,415 547,416 577,417 607,419 637,420 666,422 696,424 726,426 756,428 786,430 816,432 846,434 875,437 905,439 935,441 965,443 995,445 1025,446 1055,448"/>
+                <TextEquiv>
+                    <Unicode>Iohannem de Ry terciam partem manerii de parva Henlys vt dotem ipsius Iohanne de dotacione quondam viri ipsius Iohanne </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="line_1663284880202_47" custom="readingOrder {index:3;}">
+                <Coords points="316,415 345,415 346,442 317,442"/>
+                <Baseline points="317,437 346,437"/>
+                <TextEquiv>
+                    <Unicode>etc. </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l5" custom="readingOrder {index:4;}">
+                <Coords points="316,466 353,466 391,466 428,467 466,468 503,469 541,470 578,472 616,474 653,476 691,477 729,480 766,482 804,484 841,486 879,488 916,490 954,492 991,494 1029,495 1067,497 1067,467 1029,465 991,464 954,462 916,460 879,458 841,456 804,454 766,452 729,450 691,447 653,446 616,444 578,442 541,440 503,439 466,438 428,437 391,436 353,436 316,436"/>
+                <Baseline points="316,456 353,456 391,456 428,457 466,458 503,459 541,460 578,462 616,464 653,466 691,467 729,470 766,472 804,474 841,476 879,478 916,480 954,482 991,484 1029,485 1067,487"/>
+                <TextEquiv>
+                    <Unicode>Et Herbertus et alii veniunt et dicunt quod predicta Iohanna non debet inde dotem habere‧ Quia dicunt quod per sex annos ante </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l6" custom="readingOrder {index:5;}">
+                <Coords points="325,485 407,489 442,490 477,492 511,493 546,495 581,496 615,498 650,500 685,501 720,503 754,505 789,507 824,509 858,510 893,512 928,513 962,515 997,517 1032,518 1067,519 1067,489 1032,488 997,487 962,485 928,483 893,482 858,480 824,479 789,477 754,475 720,473 685,471 650,470 615,468 581,466 546,465 511,463 477,462 442,460 407,459 325,455"/>
+                <Baseline points="321,480 375,480 407,479 442,480 477,482 511,483 546,485 581,486 615,488 650,490 685,491 720,493 754,495 789,497 824,499 858,500 893,502 928,503 962,505 997,507 1032,508 1067,509"/>
+                <TextEquiv>
+                    <Unicode>mortem ipsius Iohannis Maudut celebratum fuit devorcium inter ipsum Iohannem et ipsam Iohannam coram Episcopo Baton </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l7" custom="readingOrder {index:6;}">
+                <Coords points="327,512 364,514 401,516 438,517 475,518 513,520 550,521 587,522 624,524 661,525 699,527 736,528 773,529 810,531 847,532 885,534 922,536 959,538 996,540 1033,542 1071,544 1071,514 1033,512 996,510 959,508 922,506 885,504 847,502 810,501 773,499 736,498 699,497 661,495 624,494 587,492 550,491 513,490 475,488 438,487 401,486 364,484 327,482"/>
+                <Baseline points="327,502 364,504 401,506 438,507 475,508 513,510 550,511 587,512 624,514 661,515 699,517 736,518 773,519 810,521 847,522 885,524 922,526 959,528 996,530 1033,532 1071,534"/>
+                <TextEquiv>
+                    <Unicode>Iudice a domino papa delegato et suis Commissariis‧ Ita quod die quo obiit non fuit in seisina de predicta Iohanna vt de </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l8" custom="readingOrder {index:7;}">
+                <Coords points="326,538 357,540 388,541 419,543 450,544 481,545 512,546 543,547 574,548 605,549 636,550 667,551 698,551 729,553 760,554 791,555 822,557 853,559 884,561 915,562 946,564 946,534 915,532 884,531 853,529 822,527 791,525 760,524 729,523 698,521 667,521 636,520 605,519 574,518 543,517 512,516 481,515 450,514 419,513 388,511 357,510 326,508"/>
+                <Baseline points="326,528 357,530 388,531 419,533 450,534 481,535 512,536 543,537 574,538 605,539 636,540 667,541 698,541 729,543 760,544 791,545 822,547 853,549 884,551 915,552 946,554"/>
+                <TextEquiv>
+                    <Unicode>vxore sua. Et predicti Iudices predictum divorcium solempniter diuulgari fecerunt per patriam. </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l9" custom="readingOrder {index:8;}">
+                <Coords points="322,568 358,569 395,570 431,571 468,572 505,573 541,573 578,574 615,576 651,577 688,578 725,579 761,581 798,582 835,584 871,586 908,589 945,591 981,594 1018,597 1055,600 1055,570 1018,567 981,564 945,561 908,559 871,556 835,554 798,552 761,551 725,549 688,548 651,547 615,546 578,544 541,543 505,543 468,542 431,541 395,540 358,539 322,538"/>
+                <Baseline points="322,558 358,559 395,560 431,561 468,562 505,563 541,563 578,564 615,566 651,567 688,568 725,569 761,571 798,572 835,574 871,576 908,579 945,581 981,584 1018,587 1055,590"/>
+                <TextEquiv>
+                    <Unicode>Et Galfridus et Iohanna dicunt quod ipsa Iohanna ante mortem predicti Iohannis egit ad divorcium contra ipsum Iohannem </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l10" custom="readingOrder {index:9;}">
+                <Coords points="321,596 357,596 394,597 431,597 467,598 504,599 541,600 577,602 614,603 651,605 688,607 724,608 761,610 798,611 834,614 871,615 908,617 944,619 981,621 1018,623 1055,625 1055,595 1018,593 981,591 944,589 908,587 871,585 834,584 798,581 761,580 724,578 688,577 651,575 614,573 577,572 541,570 504,569 467,568 431,567 394,567 357,566 321,566"/>
+                <Baseline points="321,586 357,586 394,587 431,587 467,588 504,589 541,590 577,592 614,593 651,595 688,597 724,598 761,600 798,601 834,604 871,605 908,607 944,609 981,611 1018,613 1055,615"/>
+                <TextEquiv>
+                    <Unicode>coram predictis Iudicibus set dicunt quod predictus Iohannes obiit seisitus de predicta Iohanna vt de vxore sua ante sentenciam </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l11" custom="readingOrder {index:10;}">
+                <Coords points="325,622 361,622 397,623 434,624 470,625 507,626 543,627 580,629 616,630 653,632 689,633 725,635 762,637 798,639 835,641 871,643 908,645 944,647 981,649 1017,650 1054,652 1054,622 1017,620 981,619 944,617 908,615 871,613 835,611 798,609 762,607 725,605 689,603 653,602 616,600 580,599 543,597 507,596 470,595 434,594 397,593 361,592 325,592"/>
+                <Baseline points="325,612 361,612 397,613 434,614 470,615 507,616 543,617 580,619 616,620 653,622 689,623 725,625 762,627 798,629 835,631 871,633 908,635 944,637 981,639 1017,640 1054,642"/>
+                <TextEquiv>
+                    <Unicode>latam super ipsum divorcium‧ vnde dicunt quod numquam in vita sua celebratum fuit divorcium inter eos. Et hoc </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l12" custom="readingOrder {index:11;}">
+                <Coords points="325,650 361,650 397,651 433,652 470,653 506,654 542,656 579,657 615,659 651,660 688,662 724,664 760,665 796,667 833,669 869,670 905,672 942,673 978,674 1014,676 1051,677 1051,647 1014,646 978,644 942,643 905,642 869,640 833,639 796,637 760,635 724,634 688,632 651,630 615,629 579,627 542,626 506,624 470,623 433,622 397,621 361,620 325,620"/>
+                <Baseline points="325,640 361,640 397,641 433,642 470,643 506,644 542,646 579,647 615,649 651,650 688,652 724,654 760,655 796,657 833,659 869,660 905,662 942,663 978,664 1014,666 1051,667"/>
+                <TextEquiv>
+                    <Unicode>offerunt verificare per patriam prout Curia consideraverit‧ Et quia predictus Episcopus Index delegatus et eius </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l13" custom="readingOrder {index:12;}">
+                <Coords points="322,677 358,678 395,678 431,679 468,680 504,681 541,682 577,683 614,685 650,686 687,688 724,690 760,691 797,693 833,695 870,696 906,698 943,700 979,702 1016,703 1053,704 1053,674 1016,673 979,672 943,670 906,668 870,666 833,665 797,663 760,661 724,660 687,658 650,656 614,655 577,653 541,652 504,651 468,650 431,649 395,648 358,648 322,647"/>
+                <Baseline points="322,667 358,668 395,668 431,669 468,670 504,671 541,672 577,673 614,675 650,676 687,678 724,680 760,681 797,683 833,685 870,686 906,688 943,690 979,692 1016,693 1053,694"/>
+                <TextEquiv>
+                    <Unicode>Commissarii obierunt nec constat vbi acta eorum processus predicti nec penes quem remanent consideratum quod sit inde </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="line_1663285731187_126" custom="readingOrder {index:13;}">
+                <Coords points="316,672 374,675 408,676 442,676 476,677 510,677 544,678 579,680 613,681 647,682 681,684 715,685 749,687 783,688 818,690 852,692 886,694 902,694 902,724 886,724 852,722 818,720 783,718 749,717 715,715 681,714 647,712 613,711 579,710 544,708 510,707 476,707 442,706 408,706 374,705 316,702"/>
+                <Baseline points="318,695 340,695 374,695 408,696 442,696 476,697 510,697 544,698 579,700 613,701 647,702 681,704 715,705 749,707 783,708 818,710 852,712 886,714 902,714"/>
+                <TextEquiv>
+                    <Unicode>Iurata. Ideo preceptum est vicecomiti ‧ quod venire faciat hic in crastino sancti Martini xij etc. ‘</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="line_1663285760121_134" custom="readingOrder {index:14;} unclear {offset:12; length:31;}">
+                <Coords points="905,690 917,692 954,692 991,691 1026,693 1052,691 1069,692 1066,711 1052,710 1027,712 989,710 953,708 917,708 903,708"/>
+                <Baseline points="903,703 917,703 953,703 989,705 1027,707 1052,705 1066,706"/>
+                <TextEquiv>
+                    <Unicode>de predicto visneto et de visneto de Aungre </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="line_1663285731186_125" custom="readingOrder {index:15;}">
+                <Coords points="902,703 920,705 954,704 988,706 1025,709 1054,709 1051,721 1023,731 988,730 954,728 920,726 902,724"/>
+                <Baseline points="902,714 920,716 954,718 988,720 1023,721 1049,722"/>
+                <TextEquiv>
+                    <Unicode>per quos etc. Et qui nec </Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextLine id="TextRegion_1663284780281_22l15" custom="readingOrder {index:16;}">
+                <Coords points="322,729 350,729 379,730 408,730 436,731 465,732 494,732 494,702 465,702 436,701 408,700 379,700 350,699 322,699"/>
+                <Baseline points="322,719 350,719 379,720 408,720 436,721 465,722 494,722"/>
+                <TextEquiv>
+                    <Unicode>ad recognoscendum in forma predicta.</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextEquiv>
+                <Unicode>Galfridus Fresel et Johanna vxor eius per attornatos suos petunt uersus Herbertum de Bexvilla terciam partem manerii &#13;
+de Terling‧ Et uersus Hubertum de Terling terciam partem sex Marcatarum  redditus cum pertinenciis in Herton ‧ Et uersus &#13;
+Iohannem de Ry terciam partem manerii de parva Henlys vt dotem ipsius Iohanne de dotacione quondam viri ipsius Iohanne &#13;
+etc. &#13;
+Et Herbertus et alii veniunt et dicunt quod predicta Iohanna non debet inde dotem habere‧ Quia dicunt quod per sex annos ante &#13;
+mortem ipsius Iohannis Maudut celebratum fuit devorcium inter ipsum Iohannem et ipsam Iohannam coram Episcopo Baton &#13;
+Iudice a domino papa delegato et suis Commissariis‧ Ita quod die quo obiit non fuit in seisina de predicta Iohanna vt de &#13;
+vxore sua. Et predicti Iudices predictum divorcium solempniter diuulgari fecerunt per patriam. &#13;
+Et Galfridus et Iohanna dicunt quod ipsa Iohanna ante mortem predicti Iohannis egit ad divorcium contra ipsum Iohannem &#13;
+coram predictis Iudicibus set dicunt quod predictus Iohannes obiit seisitus de predicta Iohanna vt de vxore sua ante sentenciam &#13;
+latam super ipsum divorcium‧ vnde dicunt quod numquam in vita sua celebratum fuit divorcium inter eos. Et hoc &#13;
+offerunt verificare per patriam prout Curia consideraverit‧ Et quia predictus Episcopus Index delegatus et eius &#13;
+Commissarii obierunt nec constat vbi acta eorum processus predicti nec penes quem remanent consideratum quod sit inde &#13;
+Iurata. Ideo preceptum est vicecomiti ‧ quod venire faciat hic in crastino sancti Martini xij etc. ‘&#13;
+de predicto visneto et de visneto de Aungre &#13;
+per quos etc. Et qui nec &#13;
+ad recognoscendum in forma predicta.</Unicode>
+            </TextEquiv>
+        </TextRegion>
+        <TextRegion orientation="0.0" id="TextRegion_1663284780281_23" custom="readingOrder {index:1;}">
+            <Coords points="233,336 305,336 305,742 233,742"/>
+            <TextLine id="TextRegion_1663284780281_23l1" custom="readingOrder {index:0;}">
+                <Coords points="254,380 296,384 295,330 253,326"/>
+                <Baseline points="258,365 300,369"/>
+                <TextEquiv>
+                    <Unicode>Essex</Unicode>
+                </TextEquiv>
+            </TextLine>
+            <TextEquiv>
+                <Unicode>Essex</Unicode>
+            </TextEquiv>
+        </TextRegion>
+    </Page>
+</PcGts>

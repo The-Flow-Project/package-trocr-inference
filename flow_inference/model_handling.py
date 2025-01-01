@@ -1,12 +1,18 @@
+# ===============================================================================
+# IMPORT STATEMENTS
+# ===============================================================================
 from typing import Union
 import torch
 from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel
 from flow_inference.utils.logging.inference_logger import logger
 
 
+# ===============================================================================
+# CLASS
+# ===============================================================================
 class ModelManager:
     """Manages the Loading of the TrOCR model and processor"""
-    def __init__(self, use_cuda):
+    def __init__(self, use_cuda: bool):
         # Check for CUDA first
         if use_cuda and torch.cuda.is_available():
             self.device = torch.device('cuda')
@@ -24,7 +30,6 @@ class ModelManager:
         Load the TrOCR model.
 
         :param: model_name: Name or path of the TrOCR model.
-
         :return: PreTrainedModel: The loaded model (a VisionEncoderDecoderModel) or None if it was not loaded.
         """
         if model_name:
@@ -47,7 +52,6 @@ class ModelManager:
         Load the TrOCR processor.
 
         :param: processor_name: Name or path of the TrOCR processor.
-
         :return: TrOCRProcessor: The loaded TrOCR processor or None (in case of failure).
         """
         if processor_name:

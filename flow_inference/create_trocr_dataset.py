@@ -1,8 +1,15 @@
+# ===============================================================================
+# IMPORT STATEMENTS
+# ===============================================================================
 from torch.utils.data import Dataset
 from typing import List
 from flow_inference.image_processing import ImageHandler
+from flow_inference.utils.logging.inference_logger import logger
 
 
+# ===============================================================================
+# CLASS
+# ===============================================================================
 class TrOCRInferenceDataset(Dataset):
     """
     Dataset class for TrOCR inference.
@@ -29,6 +36,18 @@ class TrOCRInferenceDataset(Dataset):
         :param idx: Index of the image to retrieve.
         """
         file_name = self.file_names[idx]
-        pixel_values = self.image_handler.handle_image(file_name)
-        encoding = {'pixel_values': pixel_values, 'file_name': file_name}
-        return encoding
+        logger.debug(f"Fetching image: {file_name} at index: {idx}")
+        try:
+            pixel_values = self.image_handler.handle_image(file_name)
+            encoding = {'pixel_values': pixel_values, 'file_name': file_name}
+            logger.debug(f"Successfully processed image: {file_name}")
+            return encoding
+        except FileNotFoundError as e:
+            logger.error(f"File not found: {file_name}. Error: {e}")
+            raise
+        except ValueError as e:
+            logger.error(f"Value error while processing image: {file_name}. Error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error while processing image: {file_name}. Error: {e}")
+            raise
