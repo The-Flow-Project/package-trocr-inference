@@ -1,0 +1,3 @@
+recursive-include flow_inference/utils *.yaml
+include README.md
+include LICENSE

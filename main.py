@@ -7,9 +7,6 @@ TrOCR inference service for the Flow project environment.
 transformers
 fastapi
 
-:TODO:
-everything :)
-
 :AUTHOR: Dana Meyer and Jonas Widmer
 :ORGANIZATION: Flow Project
 :CONTACT: jonas.widmer@unibe.ch
