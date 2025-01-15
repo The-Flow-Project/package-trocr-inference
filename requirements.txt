@@ -1,7 +1,7 @@
 fastapi~=0.111.0
 python-dotenv~=1.0.1
 flow_githubmanager~=0.1.0
-flow_preprocessor~=0.1.0
+flow_preprocessor~=0.4
 torch~=2.4.1
 transformers~=4.45.2
 pillow~=11.0.0
