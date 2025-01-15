@@ -26,7 +26,7 @@ loggers:
   preprocessing_logger:
     level: DEBUG
     handlers: [ file, console ]
-    propagate: False
+    propagate: True
 
 root:
   level: DEBUG
