@@ -3,7 +3,7 @@
 # ===============================================================================
 import glob
 import os
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Callable, Coroutine, Any
 from flow_inference.data_handling import DataHandler
 from flow_inference.image_processing import ImageHandler
 from flow_inference.model_handling import ModelManager
@@ -33,6 +33,7 @@ class Inference:
                  output_xml: bool = True,
                  image_size: Tuple[int, int] = (384, 384),
                  preprocessing_uri: Optional[str] = None,
+                 callback_preprocess: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
 
@@ -52,6 +53,7 @@ class Inference:
         self.output_xml = output_xml
         self.image_size = image_size
         self.preprocessing_uri = preprocessing_uri
+        self.callback = callback_preprocess
 
         # initialise DataHandler
         self.data_handler = DataHandler(download_path=in_path, upload_path=out_path)
@@ -59,7 +61,7 @@ class Inference:
         logger.debug(f"Inference class initialized with repo_name={repo_name}, directory={directory}, "
                      f"in_path={in_path}, out_path={out_path}")
 
-    def perform_inference(self) -> None:
+    async def perform_inference(self) -> None:
         """
         Perform inference.
 
