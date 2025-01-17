@@ -10,23 +10,25 @@ class TestInference(unittest.TestCase):
     def setUp(self):
         # Set up directories and test files
         self.test_repo_name = "github-actions-test-organisation/inference_test"
-        self.test_in_path = os.path.join("..", "test_data")
-        self.test_out_path = os.path.join("..", "test_data", "inference_results")
+        self.test_directory = os.path.join("..", "test_data", "tmp")
+        self.test_in_path = "fetched"
+        self.test_out_path = "inference_results"
         os.makedirs(self.test_out_path, exist_ok=True)
         self.test_image_file = os.path.join(
-            self.test_in_path,
-            "tmp",
+            self.test_directory,
             "preprocessed",
-            "github-actions-test-organisation_inference_test",
+            "github-actions-test-organisation___inference_test",
             "1155140_0001_47389007.line_1663284857722_42.JPG"
         )
         self.test_xml_file = os.path.join(
-            self.test_in_path,
-            "xml",
+            self.test_directory,
+            "fetched",
+            "github-actions-test-organisation___inference_test",
             "1155140_0001_47389007.xml"
         )
         self.inference = Inference(
             repo_name=self.test_repo_name,
+            directory=self.test_directory,
             repo_folder="",
             github_access_token=None,
             in_path=self.test_in_path,
@@ -58,10 +60,16 @@ class TestInference(unittest.TestCase):
         self.inference.perform_inference()
 
         # Check that results are saved
-        inferred_txt_file = os.path.join(self.test_out_path, "1155140_0001_47389007.txt")
+        inferred_txt_file = os.path.join("..",
+                                         "test_data",
+                                         "tmp",
+                                         self.test_out_path,
+                                         "1155140_0001_47389007.txt")
         self.assertTrue(os.path.exists(inferred_txt_file))
 
-        inferred_xml_file = os.path.join(self.test_out_path, "1155140_0001_47389007.xml")
+        inferred_xml_file = os.path.join(self.test_directory,
+                                         self.test_out_path,
+                                         "1155140_0001_47389007.xml")
         self.assertTrue(os.path.exists(inferred_xml_file))
 
     def test_run_inference(self):
@@ -74,7 +82,9 @@ class TestInference(unittest.TestCase):
         inferred_lines = {"test_image.jpg": "This is a test inference result."}
         self.inference.write_to_text_files(inferred_lines)
 
-        inferred_txt_file = os.path.join(self.test_out_path, "test_image.txt")
+        inferred_txt_file = os.path.join(self.test_directory,
+                                         self.test_out_path,
+                                         "test_image.txt")
         self.assertTrue(os.path.exists(inferred_txt_file))
         with open(inferred_txt_file, "r") as f:
             content = f.read()
@@ -84,7 +94,8 @@ class TestInference(unittest.TestCase):
         inferred_lines = {"TextRegion_1663284780281_22l2": "This is a test inference result."}
         self.inference.write_to_xml_files(inferred_lines, [self.test_xml_file])
 
-        inferred_xml_file = os.path.join(self.test_out_path, "1155140_0001_47389007.xml")
+        inferred_xml_file = os.path.join(self.test_directory,
+                                         self.test_out_path, "1155140_0001_47389007.xml")
         self.assertTrue(os.path.exists(inferred_xml_file))
         with open(inferred_xml_file, "r") as f:
             content = f.read()

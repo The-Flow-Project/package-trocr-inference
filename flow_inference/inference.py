@@ -22,7 +22,7 @@ class Inference:
                  repo_folder: str,
                  github_access_token: Optional[str],
                  directory: str = "tmp",
-                 in_path: str = "",
+                 in_path: str = "fetched",
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
                  trocr_processor="microsoft/trocr-large-handwritten",
@@ -156,8 +156,10 @@ class Inference:
         """
         image_files = []
         if self.preprocessing_uri is None:
-            modified_repo_path = self.repo_name.replace("/", "_")
-            preprocessing_path = os.path.join(self.in_path, self.directory, "preprocessed", modified_repo_path)
+            modified_repo_path = self.repo_name.replace("/", "___")
+            preprocessing_path = os.path.join(self.directory,
+                                              "preprocessed",
+                                              modified_repo_path)
             logger.debug(f"Looking for image files in {preprocessing_path}")
 
             for ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff']:
@@ -180,13 +182,13 @@ class Inference:
         :return: List of fetched XML files and list of files which couldn't be downloaded.
         """
         try:
-            modified_repo_path = self.repo_name.replace("/", "_")
+            modified_repo_path = self.repo_name.replace("/", "___")
             logger.debug(f"Fetching XML files from GitHub for {self.repo_name}")
 
             fetched_files, failed_files = self.data_handler.fetch_xml_files_from_github(
                 repo_name=self.repo_name,
                 folder_path=self.repo_folder,
-                download_path=os.path.join(self.in_path, self.directory, modified_repo_path)
+                download_path=os.path.join(self.directory, self.in_path, modified_repo_path)
             )
 
             logger.info(f"Fetched {len(fetched_files)} XML files.")
@@ -275,7 +277,7 @@ class Inference:
             grouped_lines[doc_name].append(f"{file_name} {inferred_text}")
 
         for doc_name, lines in grouped_lines.items():
-            txt_file_path = os.path.join(self.out_path, f"{doc_name}.txt")
+            txt_file_path = os.path.join(self.directory, self.out_path, f"{doc_name}.txt")
             logger.debug(f"Writing {len(lines)} lines to text file: {txt_file_path}")
             try:
                 with open(txt_file_path, 'w', encoding='utf-8') as f:
@@ -308,7 +310,9 @@ class Inference:
                 )
 
                 # Save updated XML
-                output_path = os.path.join(self.out_path, os.path.basename(xml_file))
+                output_path = os.path.join(self.directory,
+                                           self.out_path,
+                                           os.path.basename(xml_file))
                 logger.debug(f"Saving updated XML to: {output_path}")
                 xml_processor.save_xml(tree=xml_processor.tree, output_path=output_path)
                 logger.info(f"Updated XML saved to: {output_path}")
