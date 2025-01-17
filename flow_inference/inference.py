@@ -21,7 +21,7 @@ class Inference:
                  repo_name: str,
                  repo_folder: str,
                  github_access_token: Optional[str],
-                 directory: Optional[str] = None,
+                 directory: str = "data",
                  in_path: str = "fetched",
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
@@ -42,9 +42,11 @@ class Inference:
         self.repo_folder = repo_folder
         self.github_access_token = github_access_token
         self.modified_repo_name = repo_name.replace("/", "___")
-        self.directory = directory if directory is not None else self.modified_repo_name
-        self.in_path = in_path
-        self.out_path = out_path
+        self.directory = directory
+        self.repo_base_path = os.path.join(self.directory, self.modified_repo_name)
+        self.in_path = os.path.join(self.repo_base_path, in_path)
+        self.out_path = os.path.join(self.repo_base_path, out_path)
+        self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.trocr_processor = trocr_processor
         self.use_cuda = use_cuda
@@ -57,10 +59,10 @@ class Inference:
         self.callback = callback_preprocess
 
         # initialise DataHandler
-        self.data_handler = DataHandler(download_path=in_path, upload_path=out_path)
+        self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
 
         logger.debug(f"Inference class initialized with repo_name={repo_name}, directory={directory}, "
-                     f"in_path={in_path}, out_path={out_path}")
+                     f"in_path={self.in_path}, out_path={self.out_path}")
 
     async def perform_inference(self) -> None:
         """
@@ -157,10 +159,7 @@ class Inference:
         """
         image_files = []
         if self.preprocessing_uri is None:
-            modified_repo_path = self.repo_name.replace("/", "___")
-            preprocessing_path = os.path.join(self.directory,
-                                              "preprocessed",
-                                              modified_repo_path)
+            preprocessing_path = self.preprocessed_path
             logger.debug(f"Looking for image files in {preprocessing_path}")
 
             for ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff']:
@@ -188,7 +187,7 @@ class Inference:
             fetched_files, failed_files = self.data_handler.fetch_xml_files_from_github(
                 repo_name=self.repo_name,
                 folder_path=self.repo_folder,
-                download_path=os.path.join(self.directory, self.in_path, self.modified_repo_name)
+                download_path=self.in_path
             )
 
             logger.info(f"Fetched {len(fetched_files)} XML files.")
@@ -277,7 +276,7 @@ class Inference:
             grouped_lines[doc_name].append(f"{file_name} {inferred_text}")
 
         for doc_name, lines in grouped_lines.items():
-            txt_file_path = os.path.join(self.directory, self.out_path, f"{doc_name}.txt")
+            txt_file_path = os.path.join(self.out_path, f"{doc_name}.txt")
             logger.debug(f"Writing {len(lines)} lines to text file: {txt_file_path}")
             try:
                 with open(txt_file_path, 'w', encoding='utf-8') as f:
