@@ -309,8 +309,7 @@ class Inference:
                 )
 
                 # Save updated XML
-                output_path = os.path.join(self.directory,
-                                           self.out_path,
+                output_path = os.path.join(self.out_path,
                                            os.path.basename(xml_file))
                 logger.debug(f"Saving updated XML to: {output_path}")
                 xml_processor.save_xml(tree=xml_processor.tree, output_path=output_path)
