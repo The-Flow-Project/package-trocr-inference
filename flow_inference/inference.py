@@ -21,7 +21,7 @@ class Inference:
                  repo_name: str,
                  repo_folder: str,
                  github_access_token: Optional[str],
-                 directory: str = "tmp",
+                 directory: Optional[str] = None,
                  in_path: str = "fetched",
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
@@ -41,7 +41,8 @@ class Inference:
         self.repo_name = repo_name
         self.repo_folder = repo_folder
         self.github_access_token = github_access_token
-        self.directory = directory
+        self.modified_repo_name = repo_name.replace("/", "___")
+        self.directory = directory if directory is not None else self.modified_repo_name
         self.in_path = in_path
         self.out_path = out_path
         self.trocr_model = trocr_model
@@ -182,13 +183,12 @@ class Inference:
         :return: List of fetched XML files and list of files which couldn't be downloaded.
         """
         try:
-            modified_repo_path = self.repo_name.replace("/", "___")
             logger.debug(f"Fetching XML files from GitHub for {self.repo_name}")
 
             fetched_files, failed_files = self.data_handler.fetch_xml_files_from_github(
                 repo_name=self.repo_name,
                 folder_path=self.repo_folder,
-                download_path=os.path.join(self.directory, self.in_path, modified_repo_path)
+                download_path=os.path.join(self.directory, self.in_path, self.modified_repo_name)
             )
 
             logger.info(f"Fetched {len(fetched_files)} XML files.")

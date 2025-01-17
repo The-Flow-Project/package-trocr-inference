@@ -1,5 +1,4 @@
 import os
-import shutil
 import unittest
 
 from flow_inference.inference import Inference
@@ -10,7 +9,7 @@ class TestInference(unittest.TestCase):
     def setUp(self):
         # Set up directories and test files
         self.test_repo_name = "github-actions-test-organisation/inference_test"
-        self.test_directory = os.path.join("..", "test_data", "tmp")
+        self.test_directory = os.path.join("..", "test_data", "github-actions-test-organisation___inference_test")
         self.test_in_path = "fetched"
         self.test_out_path = "inference_results"
         os.makedirs(self.test_out_path, exist_ok=True)
@@ -62,7 +61,7 @@ class TestInference(unittest.TestCase):
         # Check that results are saved
         inferred_txt_file = os.path.join("..",
                                          "test_data",
-                                         "tmp",
+                                         "github-actions-test-organisation___inference_test",
                                          self.test_out_path,
                                          "1155140_0001_47389007.txt")
         self.assertTrue(os.path.exists(inferred_txt_file))
