@@ -46,6 +46,7 @@ class Inference:
         self.repo_base_path = os.path.join(self.directory, self.modified_repo_name)
         self.in_path = os.path.join(self.repo_base_path, in_path)
         self.out_path = os.path.join(self.repo_base_path, out_path)
+        os.makedirs(self.out_path, exist_ok=True)
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.trocr_processor = trocr_processor
