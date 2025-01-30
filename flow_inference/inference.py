@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Dict, List, Callable, Coroutine, Any
 from flow_inference.data_handling import DataHandler
 from flow_inference.image_processing import ImageHandler
 from flow_inference.model_handling import ModelManager
+from flow_inference.models import InferenceState
 from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.infer_textlines import InferenceHandler
 from flow_inference.xml_processing import XMLProcessor
@@ -33,7 +34,7 @@ class Inference:
                  output_xml: bool = True,
                  image_size: Tuple[int, int] = (384, 384),
                  preprocessing_uri: Optional[str] = None,
-                 callback_preprocess: Callable[[dict], Coroutine[Any, Any, None]] = None,
+                 callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
 
@@ -57,10 +58,29 @@ class Inference:
         self.output_xml = output_xml
         self.image_size = image_size
         self.preprocessing_uri = preprocessing_uri
-        self.callback = callback_preprocess
+        self.callback = callback_inference
+        self.kwargs = kwargs
 
         # initialise DataHandler
         self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
+
+        state = InferenceState(
+            repo_name=self.repo_name,
+            repo_folder=self.repo_folder,
+            directory=self.directory,
+            in_path=self.in_path,
+            out_path=self.out_path,
+            trocr_model=trocr_model,
+            trocr_processor=trocr_processor,
+            use_cuda=use_cuda,
+            do_resize=do_resize,
+            aspect_ratio_resize=aspect_ratio_resize,
+            output_txt=output_txt,
+            output_xml=output_xml,
+            image_size=image_size,
+            preprocessing_uri=preprocessing_uri,
+            **self.kwargs)
+        self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
 
         logger.debug(f"Inference class initialized with repo_name={repo_name}, directory={directory}, "
                      f"in_path={self.in_path}, out_path={self.out_path}")
