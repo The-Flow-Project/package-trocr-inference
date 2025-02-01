@@ -100,7 +100,10 @@ class Inference:
 
         # Step 1: Fetch image files
         logger.debug("Fetching image files.")
-        image_files = self.get_image_files()
+        try:
+            image_files = self.get_image_files()
+        except FileNotFoundError as e:
+            return
         fetched_xml_files, failed_files = self.fetch_xml_files()
         self.progressStatus = self.statusManager.initialize_status(files_fetched=image_files)
         for failed_file in failed_files:
@@ -118,7 +121,7 @@ class Inference:
             self.progressStatus = self.statusManager.update_progress(state_enum=StateEnum.FAILED)
             if self.callback:
                 await self.callback(self.progressStatus.model_dump(by_alias=True))
-            raise FileNotFoundError("No XML files fetched for inference.")
+            return
 
         # Step 3: Run inference
         logger.debug("Running inference on image files.")
@@ -128,7 +131,7 @@ class Inference:
             self.progressStatus = self.statusManager.update_progress(state_enum=StateEnum.FAILED)
             if self.callback:
                 await self.callback(self.progressStatus.model_dump(by_alias=True))
-            raise RuntimeError("Inference produced no results.")
+            return
 
         # Step 4: Save results
         logger.debug("Saving inference results.")
@@ -155,12 +158,12 @@ class Inference:
         processor = model_manager.load_processor(self.trocr_processor)
         if processor is None:
             logger.error(f"Processor loading failed for {self.trocr_processor}. Aborting inference.")
-            raise ImportError("Failed to load the processor.")
+            return None
 
         model = model_manager.load_model(self.trocr_model)
         if model is None:
             logger.error(f"Model loading failed for {self.trocr_model}. Aborting inference.")
-            raise ImportError("Failed to load the model.")
+            return None
 
         logger.info(f"Model and processor loaded successfully for {self.trocr_model}.")
 
@@ -275,7 +278,6 @@ class Inference:
             logger.error(f"Permission denied when accessing repository: {e}")
         except Exception as e:
             logger.error(f"Unexpected error during push to GitHub: {e}")
-            raise
 
     def save_results(self, inferred_lines: Dict[str, str], fetched_xml_files: List[str]) -> None:
         """

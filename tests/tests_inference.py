@@ -1,5 +1,7 @@
+import asyncio
 import os
 import unittest
+from unittest.mock import patch
 
 from flow_inference.inference import Inference
 
@@ -29,6 +31,7 @@ class TestInference(unittest.TestCase):
             "1155140_0001_47389007.xml"
         )
         self.inference = Inference(
+            process_id="1234",
             repo_name=self.test_repo_name,
             directory=self.test_directory,
             repo_folder="",
@@ -76,7 +79,7 @@ class TestInference(unittest.TestCase):
 
     def test_run_inference(self):
         image_files = self.inference.get_image_files()
-        results = self.inference.run_inference(image_files)
+        results = asyncio.run(self.inference.run_inference(image_files))
         self.assertIsInstance(results, dict)
         self.assertGreater(len(results), 0)
 
