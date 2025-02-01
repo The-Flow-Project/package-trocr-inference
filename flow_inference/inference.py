@@ -7,7 +7,8 @@ from typing import Optional, Tuple, Dict, List, Callable, Coroutine, Any
 from flow_inference.data_handling import DataHandler
 from flow_inference.image_processing import ImageHandler
 from flow_inference.model_handling import ModelManager
-from flow_inference.models import InferenceState
+from flow_inference.models import InferenceState, StateEnum
+from flow_inference.status import Status
 from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.infer_textlines import InferenceHandler
 from flow_inference.xml_processing import XMLProcessor
@@ -19,6 +20,7 @@ from collections import defaultdict
 # ===============================================================================
 class Inference:
     def __init__(self,
+                 process_id,
                  repo_name: str,
                  repo_folder: str,
                  github_access_token: Optional[str],
@@ -39,6 +41,7 @@ class Inference:
                  ) -> None:
 
         # Initialize attributes
+        self.process_id = process_id
         self.repo_name = repo_name
         self.repo_folder = repo_folder
         self.github_access_token = github_access_token
@@ -65,6 +68,7 @@ class Inference:
         self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
 
         state = InferenceState(
+            process_id=self.process_id,
             repo_name=self.repo_name,
             repo_folder=self.repo_folder,
             directory=self.directory,
@@ -81,6 +85,7 @@ class Inference:
             preprocessing_uri=preprocessing_uri,
             **self.kwargs)
         self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
+        self.statusManager = Status(self.progressStatus)
 
         logger.debug(f"Inference class initialized with repo_name={repo_name}, directory={directory}, "
                      f"in_path={self.in_path}, out_path={self.out_path}")
@@ -97,6 +102,12 @@ class Inference:
         logger.debug("Fetching image files.")
         image_files = self.get_image_files()
         fetched_xml_files, failed_files = self.fetch_xml_files()
+        self.progressStatus = self.statusManager.initialize_status(files_fetched=fetched_xml_files)
+        for failed_file in failed_files:
+            self.progressStatus = await self.statusManager.update_progress(status_type="failure_download",
+                                                                           current_item_name=failed_file)
+        if self.callback:
+            await self.callback(self.progressStatus.model_dump(by_alias=True))
 
         # Step 2: Fetch XML files
         logger.debug("Fetching XML files.")
@@ -104,21 +115,31 @@ class Inference:
             logger.warning(f"Failed to fetch the following files: {failed_files}")
         if not fetched_xml_files:
             logger.error("No XML files fetched. Exiting inference.")
+            self.progressStatus = await self.statusManager.update_progress(state_enum=StateEnum.FAILED)
+            if self.callback:
+                await self.callback(self.progressStatus.model_dump(by_alias=True))
             raise FileNotFoundError("No XML files fetched for inference.")
 
         # Step 3: Run inference
         logger.debug("Running inference on image files.")
-        inferred_lines = self.run_inference(image_files)
+        inferred_lines = await self.run_inference(image_files)
         if not inferred_lines:
             logger.error("Inference failed or produced no results.")
+            self.progressStatus = await self.statusManager.update_progress(state_enum=StateEnum.FAILED)
+            if self.callback:
+                await self.callback(self.progressStatus.model_dump(by_alias=True))
             raise RuntimeError("Inference produced no results.")
 
         # Step 4: Save results
         logger.debug("Saving inference results.")
         self.save_results(inferred_lines, fetched_xml_files)
+        self.progressStatus = self.statusManager.calculate_runtime()
+        self.progressStatus = self.statusManager.update_progress(state_enum=StateEnum.DONE)
+        if self.callback:
+            await self.callback(self.progressStatus.model_dump(by_alias=True))
         logger.info("Inference process completed successfully.")
 
-    def run_inference(self, image_files: List[str]) -> Optional[Dict[str, str]]:
+    async def run_inference(self, image_files: List[str]) -> Optional[Dict[str, str]]:
         """
         Run inference on the provided image files.
 
@@ -166,9 +187,15 @@ class Inference:
             try:
                 file_name, inferred_text = result.split("\t")
                 inferred_lines[file_name] = inferred_text
+                self.progressStatus = self.statusManager.update_progress(status_type="success", current_item_name=file_name)
+                if self.callback:
+                    await self.callback(self.progressStatus.model_dump(by_alias=True))
             except ValueError as ve:
+                file_name, inferred_text = result.split("\t")
                 logger.error(f"Malformed inference result: {result} - Error: {ve}")
-                raise ValueError(f"Inference result format error: {result}")
+                self.progressStatus = self.statusManager.update_progress(status_type="failure_inference", current_item_name=file_name)
+                if self.callback:
+                    await self.callback(self.progressStatus.model_dump(by_alias=True))
 
         return inferred_lines
 
@@ -210,8 +237,8 @@ class Inference:
                 folder_path=self.repo_folder,
                 download_path=self.in_path
             )
-
             logger.info(f"Fetched {len(fetched_files)} XML files.")
+
             if failed_files:
                 logger.warning(f"Failed to fetch {len(failed_files)} XML files: {failed_files}")
 

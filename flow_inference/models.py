@@ -1,3 +1,4 @@
+from datetime import datetime
 import enum
 from typing import Optional, Tuple, List
 
@@ -11,6 +12,9 @@ class StateEnum(enum.Enum):
 
 
 class InferenceState(BaseModel):
+    process_id: str = Field(alias="process_id",
+                            description="The uniqueid of the inference status.",
+                            title="ID")
     repo_name: str = Field(
         alias="repo_name",
         description="Name of the GitHub-repository.",
@@ -111,9 +115,9 @@ class InferenceState(BaseModel):
                                             description="The amount of successfully inferred files.",
                                             title="Files-Successful",
                                             default=0)
-    files_failed_inference: Optional[int] = Field(alias="files_failed_process",
+    files_failed_inference: Optional[int] = Field(alias="files_failed_inference",
                                                   description="The amount of files that failed inference.",
-                                                  title="Files-Failed-Process",
+                                                  title="Files-Failed-Inference",
                                                   default=0)
     files_failed_download: Optional[int] = Field(alias="files_failed_download",
                                                  description="The amount of files that failed downloading.",
@@ -127,10 +131,10 @@ class InferenceState(BaseModel):
                                                  description="The names of the successfully processed files.",
                                                  title="Filenames-Successful",
                                                  default=[])
-    filenames_failed_process: Optional[List] = Field(alias="filenames_failed_process",
-                                                     description="The names of the files that failed processing.",
-                                                     title="Filenames-Failed-Process",
-                                                     default=[])
+    filenames_failed_inference: Optional[List] = Field(alias="filenames_failed_inference",
+                                                       description="The names of the files that failed processing.",
+                                                       title="Filenames-Failed-Inference",
+                                                       default=[])
     filenames_failed_download: Optional[List] = Field(alias="filenames_failed_download",
                                                       description="The names of the files that failed downloading.",
                                                       title="Filenames-Failed-Download",
@@ -139,3 +143,7 @@ class InferenceState(BaseModel):
                                    description="The runtime of the preprocess status.",
                                    title="Runtime",
                                    default=0)
+    created_at: Optional[datetime] = Field(alias="created_at",
+                                           description="the start time of the process.",
+                                           title="Created_at",
+                                           default_factory=datetime.now)
