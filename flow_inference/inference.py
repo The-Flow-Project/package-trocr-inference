@@ -102,7 +102,7 @@ class Inference:
         logger.debug("Fetching image files.")
         image_files = self.get_image_files()
         fetched_xml_files, failed_files = self.fetch_xml_files()
-        self.progressStatus = self.statusManager.initialize_status(files_fetched=fetched_xml_files)
+        self.progressStatus = self.statusManager.initialize_status(files_fetched=image_files)
         for failed_file in failed_files:
             self.progressStatus = await self.statusManager.update_progress(status_type="failure_download",
                                                                            current_item_name=failed_file)
@@ -115,7 +115,7 @@ class Inference:
             logger.warning(f"Failed to fetch the following files: {failed_files}")
         if not fetched_xml_files:
             logger.error("No XML files fetched. Exiting inference.")
-            self.progressStatus = await self.statusManager.update_progress(state_enum=StateEnum.FAILED)
+            self.progressStatus = self.statusManager.update_progress(state_enum=StateEnum.FAILED)
             if self.callback:
                 await self.callback(self.progressStatus.model_dump(by_alias=True))
             raise FileNotFoundError("No XML files fetched for inference.")
@@ -125,7 +125,7 @@ class Inference:
         inferred_lines = await self.run_inference(image_files)
         if not inferred_lines:
             logger.error("Inference failed or produced no results.")
-            self.progressStatus = await self.statusManager.update_progress(state_enum=StateEnum.FAILED)
+            self.progressStatus = self.statusManager.update_progress(state_enum=StateEnum.FAILED)
             if self.callback:
                 await self.callback(self.progressStatus.model_dump(by_alias=True))
             raise RuntimeError("Inference produced no results.")
