@@ -1,7 +1,6 @@
 import asyncio
 import os
 import unittest
-from unittest.mock import patch
 
 from flow_inference.inference import Inference
 
@@ -31,7 +30,7 @@ class TestInference(unittest.TestCase):
             "1155140_0001_47389007.xml"
         )
         self.inference = Inference(
-            process_id="1234",
+            process_id=self.test_repo_base_path,
             repo_name=self.test_repo_name,
             directory=self.test_directory,
             repo_folder="",
@@ -62,7 +61,7 @@ class TestInference(unittest.TestCase):
         self.assertEqual(len(failed_files), 0)
 
     def test_perform_inference(self):
-        self.inference.perform_inference()
+        asyncio.run(self.inference.perform_inference())
 
         # Check that results are saved
         inferred_txt_file = os.path.join(self.test_directory,

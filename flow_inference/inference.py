@@ -13,6 +13,7 @@ from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.infer_textlines import InferenceHandler
 from flow_inference.xml_processing import XMLProcessor
 from collections import defaultdict
+from flow_preprocessor.preprocessing_logic.preprocess import Preprocessor
 
 
 # ===============================================================================
@@ -35,7 +36,6 @@ class Inference:
                  output_txt: bool = True,
                  output_xml: bool = True,
                  image_size: Tuple[int, int] = (384, 384),
-                 preprocessing_uri: Optional[str] = None,
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
@@ -60,7 +60,6 @@ class Inference:
         self.output_txt = output_txt
         self.output_xml = output_xml
         self.image_size = image_size
-        self.preprocessing_uri = preprocessing_uri
         self.callback = callback_inference
         self.kwargs = kwargs
 
@@ -82,7 +81,6 @@ class Inference:
             output_txt=output_txt,
             output_xml=output_xml,
             image_size=image_size,
-            preprocessing_uri=preprocessing_uri,
             **self.kwargs)
         self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
         self.statusManager = Status(self.progressStatus)
@@ -101,7 +99,7 @@ class Inference:
         # Step 1: Fetch image files
         logger.debug("Fetching image files.")
         try:
-            image_files = self.get_image_files()
+            image_files = await self.get_image_files()
         except FileNotFoundError as e:
             return
         fetched_xml_files, failed_files = self.fetch_xml_files()
@@ -202,26 +200,32 @@ class Inference:
 
         return inferred_lines
 
-    def get_image_files(self) -> List[str]:
+    async def get_image_files(self) -> List[str]:
         """
         Get image files from the local directory or URI.
 
         :return: List of image files.
         """
         image_files = []
-        if self.preprocessing_uri is None:
-            preprocessing_path = self.preprocessed_path
-            logger.debug(f"Looking for image files in {preprocessing_path}")
+        os.makedirs(self.preprocessed_path, exist_ok=True)
 
-            for ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff']:
-                image_files.extend(glob.glob(f'{preprocessing_path}/*.{ext}'))
-                image_files.extend(glob.glob(f'{preprocessing_path}/*.{ext.upper()}'))
-            if not image_files:
-                logger.warning(f"No image files found in {preprocessing_path}.")
-                raise FileNotFoundError(f"No image files found in {preprocessing_path}.")
-        else:
-            # TODO: Implement URI handling
-            logger.warning("URI handling for preprocessing is not implemented yet.")
+        # TODO: adapt parameters
+        logger.info("Starting preprocessing of image files.")
+        preprocessor = Preprocessor(repo_name=self.repo_name,
+                                    directory=self.directory,
+                                    process_id=self.modified_repo_name,
+                                    github_access_token=self.github_access_token,
+                                    repo_folder='xml')
+        await preprocessor.preprocess()
+        logger.info("Preprocessing completed.")
+        logger.debug(f"Looking for image files in {self.preprocessed_path}")
+
+        for ext in ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff']:
+            image_files.extend(glob.glob(f'{self.preprocessed_path}/*.{ext}'))
+            image_files.extend(glob.glob(f'{self.preprocessed_path}/*.{ext.upper()}'))
+        if not image_files:
+            logger.warning(f"No image files found in {self.preprocessed_path}.")
+            raise FileNotFoundError(f"No image files found in {self.preprocessed_path}.")
 
         logger.debug(f"Found {len(image_files)} image files.")
         return image_files
@@ -255,29 +259,6 @@ class Inference:
         except Exception as e:
             logger.error(f"Unexpected error while fetching XML files: {e}")
             return [], []
-
-    # TODO: push files with inference results back to GitHub?
-    def push_to_github(self, updated_files: List[str]) -> None:
-        """
-        Push the updated XML files to GitHub after saving them locally.
-
-        :param: updated_files: XML files containing inference results.
-        :return: None.
-        """
-        if not updated_files:
-            logger.warning("No updated files to push to GitHub.")
-            return
-
-        try:
-            data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
-            data_handler.push_xml_files_to_github(self.repo_name, updated_files)
-            logger.info(f"Successfully pushed updated XML files to GitHub.")
-        except ConnectionError as e:
-            logger.error(f"Network issue during push to GitHub: {e}")
-        except PermissionError as e:
-            logger.error(f"Permission denied when accessing repository: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error during push to GitHub: {e}")
 
     def save_results(self, inferred_lines: Dict[str, str], fetched_xml_files: List[str]) -> None:
         """
