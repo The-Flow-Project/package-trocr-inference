@@ -8,32 +8,32 @@ class TestModelManager(unittest.TestCase):
     @patch('torch.cuda.is_available', return_value=True)
     def test_device_cuda_available(self, _mock_cuda):
         """Test device selection when CUDA is available."""
-        model_manager = ModelManager(use_cuda=True)
+        model_manager = ModelManager()
         self.assertEqual(model_manager.device.type, 'cuda')
 
     @patch('torch.cuda.is_available', return_value=False)
     @patch('torch.backends.mps.is_available', return_value=False)
     def test_device_cuda_and_mps_not_available(self, _mock_mps, _mock_cuda):
         """Test device selection when neither CUDA nor MPS are available."""
-        model_manager = ModelManager(use_cuda=True)
+        model_manager = ModelManager()
         self.assertEqual(model_manager.device.type, 'cpu')
 
     @patch('torch.cuda.is_available', return_value=False)
     @patch('torch.backends.mps.is_available', return_value=True)
     def test_device_mps_available(self, _mock_mps, _mock_cuda):
         """Test device selection when MPS is available but CUDA is not."""
-        model_manager = ModelManager(use_cuda=True)
+        model_manager = ModelManager()
         self.assertEqual(model_manager.device.type, 'mps')
 
     @patch('torch.cuda.is_available', return_value=False)
     def test_device_cuda_not_available(self, _mock_cuda):
         """Test device selection when CUDA is not available and no MPS."""
-        model_manager = ModelManager(use_cuda=True)
+        model_manager = ModelManager()
         self.assertEqual(model_manager.device.type, 'cpu')
 
     def test_device_force_cpu(self):
         """Test device selection when use_cuda is False."""
-        model_manager = ModelManager(use_cuda=False)
+        model_manager = ModelManager()
         self.assertEqual(model_manager.device.type, 'cpu')
 
     # --- Model Loading Tests ---
@@ -46,7 +46,7 @@ class TestModelManager(unittest.TestCase):
         mock_from_pretrained.return_value = mock_model
 
         # Load the model
-        model_manager = ModelManager(use_cuda=False)
+        model_manager = ModelManager()
         model_name = "microsoft/trocr-small-handwritten"
         loaded_model = model_manager.load_model(model_name)
 
@@ -58,7 +58,7 @@ class TestModelManager(unittest.TestCase):
     @patch('transformers.VisionEncoderDecoderModel.from_pretrained', side_effect=Exception("Model loading failed"))
     def test_load_model_failure(self, mock_from_pretrained):
         """Test exception handling during model loading."""
-        model_manager = ModelManager(use_cuda=False)
+        model_manager = ModelManager()
         with self.assertRaises(Exception) as context:
             model_manager.load_model("non-existent-model")
 

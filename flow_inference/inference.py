@@ -30,7 +30,6 @@ class Inference:
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
                  trocr_processor="microsoft/trocr-large-handwritten",
-                 use_cuda: bool = True,
                  do_resize: bool = False,
                  aspect_ratio_resize: bool = False,
                  output_txt: bool = True,
@@ -54,7 +53,6 @@ class Inference:
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.trocr_processor = trocr_processor
-        self.use_cuda = use_cuda
         self.do_resize = do_resize
         self.aspect_ratio_resize = aspect_ratio_resize
         self.output_txt = output_txt
@@ -75,7 +73,6 @@ class Inference:
             out_path=self.out_path,
             trocr_model=trocr_model,
             trocr_processor=trocr_processor,
-            use_cuda=use_cuda,
             do_resize=do_resize,
             aspect_ratio_resize=aspect_ratio_resize,
             output_txt=output_txt,
@@ -150,7 +147,7 @@ class Inference:
         logger.debug(f"Starting run_inference with {len(image_files)} image files.")
 
         # Load model and processor
-        model_manager = ModelManager(self.use_cuda)
+        model_manager = ModelManager()
         logger.debug("ModelManager initialized.")
 
         processor = model_manager.load_processor(self.trocr_processor)

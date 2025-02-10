@@ -11,7 +11,7 @@ from flow_inference.infer_textlines import InferenceHandler
 class TestInferenceHandler(unittest.TestCase):
 
     def setUp(self):
-        model_manager = ModelManager(use_cuda=False)
+        model_manager = ModelManager()
         model = model_manager.load_model('microsoft/trocr-small-handwritten')
         processor = model_manager.load_processor("microsoft/trocr-base-handwritten")
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

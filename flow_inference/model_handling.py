@@ -12,9 +12,9 @@ from flow_inference.utils.logging.inference_logger import logger
 # ===============================================================================
 class ModelManager:
     """Manages the Loading of the TrOCR model and processor"""
-    def __init__(self, use_cuda: bool):
+    def __init__(self):
         # Check for CUDA first
-        if use_cuda and torch.cuda.is_available():
+        if torch.cuda.is_available():
             self.device = torch.device('cuda')
         # Check for MPS if CUDA isn't available
         elif torch.backends.mps.is_available():
