@@ -30,8 +30,6 @@ class Inference:
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
                  trocr_processor="microsoft/trocr-large-handwritten",
-                 output_txt: bool = True,
-                 output_xml: bool = True,
                  target_image_size: Tuple[int, int] = (384, 384),
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
@@ -51,8 +49,6 @@ class Inference:
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.trocr_processor = trocr_processor
-        self.output_txt = output_txt
-        self.output_xml = output_xml
         self.target_image_size = target_image_size
         self.callback = callback_inference
         self.kwargs = kwargs
@@ -69,8 +65,6 @@ class Inference:
             out_path=self.out_path,
             trocr_model=trocr_model,
             trocr_processor=trocr_processor,
-            output_txt=output_txt,
-            output_xml=output_xml,
             image_size=target_image_size,
             **self.kwargs)
         self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
@@ -260,9 +254,8 @@ class Inference:
             :return: None.
             """
         try:
-            if self.output_txt:
-                logger.debug("Writing inference results to text files.")
-                self.write_to_text_files(inferred_lines)
+            logger.debug("Writing inference results to text files.")
+            self.write_to_text_files(inferred_lines)
         except FileNotFoundError as e:
             logger.error(f"File path for saving text files not found. Error: {e}")
         except PermissionError as e:
@@ -273,9 +266,8 @@ class Inference:
             logger.error(f"An unexpected error occurred while saving text results. Error: {e}")
 
         try:
-            if self.output_xml:
-                logger.debug("Writing inference results to XML files.")
-                self.write_to_xml_files(inferred_lines, fetched_xml_files)
+            logger.debug("Writing inference results to XML files.")
+            self.write_to_xml_files(inferred_lines, fetched_xml_files)
         except FileNotFoundError as e:
             logger.error(f"XML file path for saving not found. Error: {e}")
         except PermissionError as e:
