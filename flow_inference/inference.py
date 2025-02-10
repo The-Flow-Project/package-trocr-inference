@@ -30,11 +30,9 @@ class Inference:
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
                  trocr_processor="microsoft/trocr-large-handwritten",
-                 do_resize: bool = False,
-                 aspect_ratio_resize: bool = False,
                  output_txt: bool = True,
                  output_xml: bool = True,
-                 image_size: Tuple[int, int] = (384, 384),
+                 target_image_size: Tuple[int, int] = (384, 384),
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
@@ -53,11 +51,9 @@ class Inference:
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.trocr_processor = trocr_processor
-        self.do_resize = do_resize
-        self.aspect_ratio_resize = aspect_ratio_resize
         self.output_txt = output_txt
         self.output_xml = output_xml
-        self.image_size = image_size
+        self.target_image_size = target_image_size
         self.callback = callback_inference
         self.kwargs = kwargs
 
@@ -73,11 +69,9 @@ class Inference:
             out_path=self.out_path,
             trocr_model=trocr_model,
             trocr_processor=trocr_processor,
-            do_resize=do_resize,
-            aspect_ratio_resize=aspect_ratio_resize,
             output_txt=output_txt,
             output_xml=output_xml,
-            image_size=image_size,
+            image_size=target_image_size,
             **self.kwargs)
         self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
         self.statusManager = Status(self.progressStatus)
@@ -97,7 +91,7 @@ class Inference:
         logger.debug("Fetching image files.")
         try:
             image_files = await self.get_image_files()
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             return
         fetched_xml_files, failed_files = self.fetch_xml_files()
         self.progressStatus = self.statusManager.initialize_status(files_fetched=image_files)
@@ -165,9 +159,7 @@ class Inference:
         # Run inference
         image_handler = ImageHandler(
             processor=processor,
-            image_size=self.image_size,
-            do_resize=self.do_resize,
-            aspect_ratio_resize=self.aspect_ratio_resize
+            target_image_size=self.target_image_size
         )
         inference_handler = InferenceHandler(
             device=model_manager.device,
@@ -185,13 +177,15 @@ class Inference:
             try:
                 file_name, inferred_text = result.split("\t")
                 inferred_lines[file_name] = inferred_text
-                self.progressStatus = self.statusManager.update_progress(status_type="success", current_item_name=file_name)
+                self.progressStatus = self.statusManager.update_progress(status_type="success",
+                                                                         current_item_name=file_name)
                 if self.callback:
                     await self.callback(self.progressStatus.model_dump(by_alias=True))
             except ValueError as ve:
                 file_name, inferred_text = result.split("\t")
                 logger.error(f"Malformed inference result: {result} - Error: {ve}")
-                self.progressStatus = self.statusManager.update_progress(status_type="failure_inference", current_item_name=file_name)
+                self.progressStatus = self.statusManager.update_progress(status_type="failure_inference",
+                                                                         current_item_name=file_name)
                 if self.callback:
                     await self.callback(self.progressStatus.model_dump(by_alias=True))
 

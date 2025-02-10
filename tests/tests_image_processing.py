@@ -12,9 +12,7 @@ class TestImageHandler(unittest.TestCase):
         processor = TrOCRProcessor.from_pretrained('microsoft/trocr-base-handwritten')
         cls.image_handler = ImageHandler(
             processor=processor,
-            image_size=(384, 384),
-            do_resize=True,
-            aspect_ratio_resize=False
+            target_image_size=(384, 384)
         )
         current_dir: str = os.path.dirname(os.path.realpath(__file__))
         cls.test_image_path = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.0.png')
@@ -37,9 +35,7 @@ class TestImageHandler(unittest.TestCase):
         large_image = Image.new('RGB', (800, 600), color='blue')
         handler_with_aspect_ratio = ImageHandler(
             processor=self.image_handler.processor,
-            image_size=(384, 384),
-            do_resize=True,
-            aspect_ratio_resize=True
+            target_image_size=(384, 384)
         )
         resized_image = handler_with_aspect_ratio.resize_with_aspect_ratio(large_image)
         self.assertEqual(resized_image.size, (384, 384))
@@ -57,17 +53,19 @@ class TestImageHandler(unittest.TestCase):
         self.assertIsInstance(pixel_values, torch.Tensor)
         self.assertEqual(pixel_values.shape, torch.Size([3, 384, 384]))
 
-    def test_handle_image_with_aspect_ratio(self):
-        """Test the pipeline when aspect ratio resizing is enabled."""
-        handler_with_aspect_ratio = ImageHandler(
+    def test_handle_image_no_resizing(self):
+        """Test the pipeline when resizing is disabled by setting `target_image_size=None`."""
+        handler_no_resize = ImageHandler(
             processor=self.image_handler.processor,
-            image_size=(384, 384),
-            do_resize=True,
-            aspect_ratio_resize=True
+            target_image_size=None  # No resizing should happen
         )
-        pixel_values = handler_with_aspect_ratio.handle_image(self.test_image_path)
-        self.assertIsInstance(pixel_values, torch.Tensor)
-        self.assertEqual(pixel_values.shape, torch.Size([3, 384, 384]))
+        with Image.open(self.test_image_path) as image:
+            original_size = image.size
+
+        processed_image = handler_no_resize.handle_image(self.test_image_path)
+        self.assertIsInstance(processed_image, torch.Tensor)
+
+        self.assertEqual(original_size, Image.open(self.test_image_path).size)
 
     def test_process_batch(self):
         """Test processing a batch of images."""

@@ -18,21 +18,15 @@ class ImageHandler:
     def __init__(
             self, 
             processor: TrOCRProcessor,
-            image_size: Tuple[int, int],
-            do_resize: bool,
-            aspect_ratio_resize: bool
+            target_image_size: Tuple[int, int] = None
             ):
         """
 
         :param processor: a TrOCRProcessor instance.
-        :param image_size: the size the image should have.
-        :param do_resize: whether to resize. Defaults to False.
-        :param aspect_ratio_resize: whether to resize (padding if necessary). Defaults to False.
+        :param target_image_size: the size the image should have.
         """
         self.processor = processor
-        self.image_size = image_size
-        self.do_resize = do_resize
-        self.aspect_ratio_resize = aspect_ratio_resize
+        self.target_image_size = target_image_size
 
     @staticmethod
     def load_image(file_name: str) -> Image:
@@ -59,12 +53,12 @@ class ImageHandler:
         :return: The padded image.
         """
         try:
-            image.thumbnail(self.image_size, Image.Resampling.LANCZOS)
+            image.thumbnail(self.target_image_size, Image.Resampling.LANCZOS)
 
             # Create a new image with a white background and paste the resized image into it
             padded_image = ImageOps.pad(
                 image,
-                self.image_size,
+                self.target_image_size,
                 method=Image.Resampling.LANCZOS,
                 color=(1, 1, 1)  # white padding
             )
@@ -98,13 +92,13 @@ class ImageHandler:
         try:
             image = self.load_image(file_name)
 
-            if self.do_resize and self.aspect_ratio_resize:
-                if image.size[0] < self.image_size[0] or image.size[1] < self.image_size[1]:
+            if self.target_image_size:
+                if image.size[0] < self.target_image_size[0] or image.size[1] < self.target_image_size[1]:
                     logger.info(f"Resizing with aspect ratio due to image size: {image.size}")
                     image = self.resize_with_aspect_ratio(image)
-            elif self.do_resize:
-                logger.info(f"Resizing image to {self.image_size}")
-                image = image.resize(self.image_size, Image.Resampling.LANCZOS)
+                else:
+                    logger.info(f"Resizing image to {self.target_image_size}")
+                    image = image.resize(self.target_image_size, Image.Resampling.LANCZOS)
 
             processed_image = self.process_image(image)
 

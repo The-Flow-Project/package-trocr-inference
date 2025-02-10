@@ -61,24 +61,6 @@ class InferenceState(BaseModel):
         description="TrOCR processor used in inference process.",
         title="TrOCR_Processor",
     )
-    use_cuda: Optional[bool] = Field(
-        default=True,
-        alias="use_cuda",
-        description="Whether to use cuda.",
-        title="Use-Cuda",
-    )
-    do_resize: Optional[bool] = Field(
-        default=True,
-        alias="do_resize",
-        description="Whether to resize image.",
-        title="Do-Resize",
-    )
-    aspect_ratio_resize: Optional[bool] = Field(
-        default=True,
-        alias="aspect_ratio_resize",
-        description="Whether to use aspect ratio to resize image.",
-        title="Aspect-Ratio-Resize",
-    )
     output_txt: Optional[bool] = Field(
         default=True,
         alias="output_txt",
@@ -91,17 +73,11 @@ class InferenceState(BaseModel):
         description="Whether to save inference results in XML file.",
         title="Output-XML",
     )
-    image_size: Optional[Tuple[int, int]] = Field(
+    target_image_size: Optional[Tuple[int, int]] = Field(
         default=(384, 384),
-        alias="image_size",
-        description="size of image to be processed.",
-        title="Image-Size",
-    )
-    preprocesing_uri: Optional[str] = Field(
-        default="",
-        alias="preprocesing_uri",
-        description="URI to download preprocessing files from.",
-        title="Preprocessing-URI",
+        alias="target_image_size",
+        description="target size of image.",
+        title="Target-Image-Size",
     )
     progress: int = Field(alias="progress",
                           description="The progress of the inference process.",

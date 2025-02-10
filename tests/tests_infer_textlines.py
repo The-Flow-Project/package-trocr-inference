@@ -22,9 +22,7 @@ class TestInferenceHandler(unittest.TestCase):
         self.test_image_path_2 = os.path.join(current_dir, '..', 'test_data', 'images', '1_0054.1.png')
         self.image_paths = [self.test_image_path_1, self.test_image_path_2]
         self.image_handler = ImageHandler(processor=processor,
-                                          image_size=(384, 384),
-                                          do_resize=False,
-                                          aspect_ratio_resize=False)
+                                          target_image_size=(384, 384))
 
     def test_inference(self):
         # Set up the inference dataset
