@@ -1,7 +1,6 @@
 import asyncio
 import os
 import unittest
-
 from flow_inference.inference import Inference
 
 
@@ -14,7 +13,6 @@ class TestInference(unittest.TestCase):
         self.test_repo_base_path = "github-actions-test-organisation___inference_test"
         self.test_in_path = "fetched"
         self.test_out_path = "inference_results"
-        os.makedirs(self.test_out_path, exist_ok=True)
         self.test_preprocessed_path = "preprocessed"
 
         self.test_image_file = os.path.join(
@@ -43,7 +41,7 @@ class TestInference(unittest.TestCase):
         )
 
     def test_get_image_files(self):
-        image_files = self.inference.get_image_files()
+        image_files = asyncio.run(self.inference.get_image_files())
         self.assertIn(self.test_image_file, image_files)
 
     def test_fetch_xml_files(self):
@@ -77,7 +75,7 @@ class TestInference(unittest.TestCase):
         self.assertTrue(os.path.exists(inferred_xml_file))
 
     def test_run_inference(self):
-        image_files = self.inference.get_image_files()
+        image_files = asyncio.run(self.inference.get_image_files())
         results = asyncio.run(self.inference.run_inference(image_files))
         self.assertIsInstance(results, dict)
         self.assertGreater(len(results), 0)
