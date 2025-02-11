@@ -41,6 +41,18 @@ class InferenceState(BaseModel):
         description="target size of image.",
         title="Target-Image-Size",
     )
+    abbrev: bool = Field(default=False,
+                         alias="abbrev",
+                         description="Whether to expand abbreviations in text.",
+                         title="Abbrev")
+    crop: bool = Field(default=False,
+                       alias="crop",
+                       description="Whether to crop images to their linemask.",
+                       title="Crop")
+    stop_on_fail: bool = Field(default=True,
+                               alias="stop_on_fail",
+                               description="Whether to stop processing on failure.",
+                               title="Stop-On-Fail")
     progress: int = Field(alias="progress",
                           description="The progress of the inference process.",
                           title="Progress",

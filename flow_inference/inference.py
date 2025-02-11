@@ -27,6 +27,9 @@ class Inference:
                  directory: str = "data",
                  trocr_model="microsoft/trocr-large-handwritten",
                  target_image_size: Tuple[int, int] = None,
+                 crop: bool = False,
+                 abbrev: bool = False,
+                 stop_on_fail: bool = False,
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
@@ -45,6 +48,9 @@ class Inference:
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
         self.target_image_size = target_image_size
+        self.stop_on_fail = stop_on_fail
+        self.crop = crop
+        self.abbrev = abbrev
         self.callback = callback_inference
         self.kwargs = kwargs
 
@@ -194,7 +200,10 @@ class Inference:
                                     directory=self.directory,
                                     process_id=self.modified_repo_name,
                                     github_access_token=self.github_access_token,
-                                    repo_folder='xml')
+                                    repo_folder='xml',
+                                    crop=self.crop,
+                                    abbrev=self.abbrev,
+                                    stop_on_fail=self.stop_on_fail)
         await preprocessor.preprocess()
         logger.info("Preprocessing completed.")
         logger.debug(f"Looking for image files in {self.preprocessed_path}")
