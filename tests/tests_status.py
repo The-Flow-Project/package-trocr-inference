@@ -10,7 +10,6 @@ class TestStatus(unittest.TestCase):
         self.test_state = InferenceState(
             process_id="1234",
             repo_name="github-actions-test-organisation/inference_test",
-            repo_folder="xml",
             files_total=0,
             files_successful=0,
             files_failed_download=0,

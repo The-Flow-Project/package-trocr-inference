@@ -22,32 +22,12 @@ class InferenceState(BaseModel):
         examples=["your_github_name/your_repo_name"],
         frozen=True,
     )
-    repo_folder: str = Field(
-        alias="repo_folder",
-        description="Folder in the repository the files are fetched from.",
-        title="Repository-Folder",
-        examples=["xml", "page"],
-    )
     directory: Optional[str] = Field(
         default="data",
         alias="directory",
         description="Directory to save the files temporarily to.",
         title="Directory",
         examples=["data"],
-    )
-    in_path: Optional[str] = Field(
-        default="preprocessed",
-        alias="in_path",
-        description="Path to save the preprocessed files.",
-        title="In-Path",
-        examples=["fetched"],
-    )
-    out_path: Optional[str] = Field(
-        default="inference_results",
-        alias="out_path",
-        description="Path to save the inference results.",
-        title="Out-Path",
-        examples=["inference_results"],
     )
     trocr_model: Optional[str] = Field(
         default="microsoft/trocr-large-handwritten",

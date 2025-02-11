@@ -31,10 +31,7 @@ class TestInference(unittest.TestCase):
             process_id=self.test_repo_base_path,
             repo_name=self.test_repo_name,
             directory=self.test_directory,
-            repo_folder="",
             github_access_token=None,
-            in_path=self.test_in_path,
-            out_path=self.test_out_path,
             trocr_model="microsoft/trocr-small-handwritten"
         )
 

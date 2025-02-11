@@ -23,13 +23,10 @@ class Inference:
     def __init__(self,
                  process_id,
                  repo_name: str,
-                 repo_folder: str,
                  github_access_token: Optional[str],
                  directory: str = "data",
-                 in_path: str = "fetched",
-                 out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
-                 target_image_size: Tuple[int, int] = (384, 384),
+                 target_image_size: Tuple[int, int] = None,
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
                  ) -> None:
@@ -37,13 +34,13 @@ class Inference:
         # Initialize attributes
         self.process_id = process_id
         self.repo_name = repo_name
-        self.repo_folder = repo_folder
+        self.repo_folder = "xml"
         self.github_access_token = github_access_token
         self.modified_repo_name = repo_name.replace("/", "___")
         self.directory = directory
         self.repo_base_path = os.path.join(self.directory, self.modified_repo_name)
-        self.in_path = os.path.join(self.repo_base_path, in_path)
-        self.out_path = os.path.join(self.repo_base_path, out_path)
+        self.in_path = os.path.join(self.repo_base_path, "fetched")
+        self.out_path = os.path.join(self.repo_base_path, "inference_results")
         os.makedirs(self.out_path, exist_ok=True)
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
