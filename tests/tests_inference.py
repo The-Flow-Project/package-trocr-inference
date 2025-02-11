@@ -35,8 +35,7 @@ class TestInference(unittest.TestCase):
             github_access_token=None,
             in_path=self.test_in_path,
             out_path=self.test_out_path,
-            trocr_model="microsoft/trocr-small-handwritten",
-            trocr_processor="microsoft/trocr-base-handwritten",
+            trocr_model="microsoft/trocr-small-handwritten"
         )
 
     def test_get_image_files(self):

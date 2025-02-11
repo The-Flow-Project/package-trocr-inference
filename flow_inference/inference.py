@@ -29,7 +29,6 @@ class Inference:
                  in_path: str = "fetched",
                  out_path: str = "inference_results",
                  trocr_model="microsoft/trocr-large-handwritten",
-                 trocr_processor="microsoft/trocr-large-handwritten",
                  target_image_size: Tuple[int, int] = (384, 384),
                  callback_inference: Callable[[dict], Coroutine[Any, Any, None]] = None,
                  **kwargs
@@ -48,7 +47,6 @@ class Inference:
         os.makedirs(self.out_path, exist_ok=True)
         self.preprocessed_path = os.path.join(self.repo_base_path, "preprocessed")
         self.trocr_model = trocr_model
-        self.trocr_processor = trocr_processor
         self.target_image_size = target_image_size
         self.callback = callback_inference
         self.kwargs = kwargs
@@ -64,7 +62,6 @@ class Inference:
             in_path=self.in_path,
             out_path=self.out_path,
             trocr_model=trocr_model,
-            trocr_processor=trocr_processor,
             image_size=target_image_size,
             **self.kwargs)
         self.progressStatus = InferenceState(**state.model_dump(by_alias=True))
@@ -138,9 +135,9 @@ class Inference:
         model_manager = ModelManager()
         logger.debug("ModelManager initialized.")
 
-        processor = model_manager.load_processor(self.trocr_processor)
+        processor = model_manager.load_processor(self.trocr_model)
         if processor is None:
-            logger.error(f"Processor loading failed for {self.trocr_processor}. Aborting inference.")
+            logger.error(f"Processor loading failed for {self.trocr_model}. Aborting inference.")
             return None
 
         model = model_manager.load_model(self.trocr_model)

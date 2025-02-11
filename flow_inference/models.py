@@ -55,24 +55,6 @@ class InferenceState(BaseModel):
         description="TrOCR model used in inference process.",
         title="TrOCR_Model",
     )
-    trocr_processor: Optional[str] = Field(
-        default="microsoft/trocr-large-handwritten",
-        alias="trocr_processor",
-        description="TrOCR processor used in inference process.",
-        title="TrOCR_Processor",
-    )
-    output_txt: Optional[bool] = Field(
-        default=True,
-        alias="output_txt",
-        description="Whether to create an .txt file for inference results.",
-        title="Output-txt",
-    )
-    output_xml: Optional[bool] = Field(
-        default=True,
-        alias="output_xml",
-        description="Whether to save inference results in XML file.",
-        title="Output-XML",
-    )
     target_image_size: Optional[Tuple[int, int]] = Field(
         default=(384, 384),
         alias="target_image_size",

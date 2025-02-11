@@ -81,13 +81,22 @@ class TestModelManager(unittest.TestCase):
         mock_from_pretrained.assert_called_once_with(processor_name)
         self.assertIsInstance(loaded_processor, TrOCRProcessor)
 
-    @patch('transformers.TrOCRProcessor.from_pretrained', side_effect=Exception("Processor loading failed"))
-    def test_load_processor_failure(self, mock_from_pretrained):
-        """Test exception handling during processor loading."""
-        with self.assertRaises(Exception) as context:
-            ModelManager.load_processor("non-existent-processor")
+    @patch('transformers.TrOCRProcessor.from_pretrained', side_effect=OSError("Processor loading failed"))
+    def test_load_processor_fallback(self, mock_from_pretrained):
+        """Test that the fallback processor is used when the main one fails."""
+        loaded_processor = ModelManager.load_processor("non-existent-processor")
 
-        self.assertIn("Processor loading failed", str(context.exception))
+        # The fallback should have been attempted
+        self.assertEqual(mock_from_pretrained.call_count, 2)
+        self.assertIn("microsoft/trocr-base-handwritten", mock_from_pretrained.call_args_list[1][0])
+
+    @patch('transformers.TrOCRProcessor.from_pretrained', side_effect=OSError("Processor loading failed"))
+    def test_load_processor_failure(self, mock_from_pretrained):
+        """Test that processor loading returns None when both main and fallback fail."""
+        loaded_processor = ModelManager.load_processor("non-existent-processor")
+
+        self.assertIsNone(loaded_processor)
+        self.assertEqual(mock_from_pretrained.call_count, 2)
 
 
 if __name__ == '__main__':

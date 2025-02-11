@@ -3,7 +3,7 @@
 # ===============================================================================
 from typing import Union
 import torch
-from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel
+from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel, AutoProcessor
 from flow_inference.utils.logging.inference_logger import logger
 
 
@@ -49,11 +49,13 @@ class ModelManager:
     @staticmethod
     def load_processor(processor_name: str) -> Union[TrOCRProcessor, None]:
         """
-        Load the TrOCR processor.
+        Load the TrOCR processor dynamically. Falls back to 'microsoft/trocr-base-handwritten' if loading fails.
 
         :param: processor_name: Name or path of the TrOCR processor.
         :return: TrOCRProcessor: The loaded TrOCR processor or None (in case of failure).
         """
+        fallback_processor = "microsoft/trocr-base-handwritten"
+
         if processor_name:
             try:
                 logger.info(f"Loading processor: {processor_name}")
@@ -62,7 +64,13 @@ class ModelManager:
                 return processor
             except (OSError, ValueError) as e:
                 logger.error(f"Failed to load processor '{processor_name}': {e}")
-                return None
-        else:
-            logger.error(f"The processor with name '{processor_name}' could not be loaded.")
-            raise ValueError(f"The processor with name '{processor_name}' could not be loaded.")
+
+        # Fallback to the default processor
+        try:
+            logger.info(f"Falling back to default processor: {fallback_processor}")
+            processor = TrOCRProcessor.from_pretrained(fallback_processor)
+            logger.info(f"Default processor {fallback_processor} loaded.")
+            return processor
+        except (OSError, ValueError) as e:
+            logger.error(f"Failed to load fallback processor '{fallback_processor}': {e}")
+            return None
