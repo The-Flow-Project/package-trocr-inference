@@ -1,4 +1,4 @@
-fastapi~=0.111.0
+fastapi~=0.115.6
 python-dotenv~=1.0.1
 flow_githubmanager~=0.1.0
 flow_preprocessor~=0.4
@@ -8,3 +8,6 @@ pillow~=11.0.0
 tqdm~=4.66.5
 PyYAML~=6.0.2
 requests~=2.32.3
+pydantic~=2.8.2
+setuptools~=70.2.0
+evaluate~=0.4.3
