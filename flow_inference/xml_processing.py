@@ -106,3 +106,29 @@ class XMLProcessor:
                 f.write(xml_str_pretty)
         except IOError as e:
             raise IOError(f"Error saving XML to '{output_path}': {e}") from e
+
+    def extract_text_from_textline(self, text_line: Element) -> Optional[str]:
+        """
+        Extracts text from a given <TextLine> element.
+
+        Args:
+            text_line (Element): The <TextLine> XML element.
+
+        Returns:
+            str or None: Extracted text or None if <Unicode> is missing.
+        """
+        text_equiv = text_line.find(f"{self.xmlns}TextEquiv")
+        if text_equiv is not None:
+            unicode_elem = text_equiv.find(f"{self.xmlns}Unicode")
+            return unicode_elem.text.strip() if unicode_elem is not None and unicode_elem.text else None
+        return None
+
+    def extract_all_text_lines(self) -> list:
+        """
+        Extracts text content from all <TextLine> elements in the XML.
+
+        Returns:
+            list: List of extracted text strings (empty if no text exists).
+        """
+        text_lines = self.root.findall(f".//{self.xmlns}TextLine")
+        return [self.extract_text_from_textline(line) for line in text_lines if self.extract_text_from_textline(line)]
