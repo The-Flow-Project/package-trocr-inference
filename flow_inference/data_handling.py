@@ -45,23 +45,20 @@ class DataHandler:
         """
         try:
             logger.info(f"Attempting to fetch XML files from repo '{repo_name}' in folder '{folder_path}'...")
-            fetched_files = self.github_manager.fetch_files(repo_name,
-                                                            folder_path,
-                                                            ".xml",
-                                                            download_path)
-            return fetched_files
-        except HTTPError as e:
-            logger.error(f"HTTP error occurred while fetching files from GitHub: {e}")
-            raise
+            fetched_files, failed_files = self.github_manager.fetch_files(repo_name,
+                                                                          folder_path,
+                                                                          ".xml",
+                                                                          download_path)
+            return fetched_files, failed_files
+        except ConnectionError as e:
+            logger.error(f"Network issue while fetching XML files: {e}")
+            return [], []
         except FileNotFoundError as e:
-            logger.error(f"File not found error occurred while fetching files from GitHub: {e}")
-            raise
-        except ValueError as e:
-            logger.error(f"Value error occurred during fetching files: {e}")
-            raise
+            logger.error(f"Repository folder not found: {e}")
+            return [], []
         except Exception as e:
-            logger.error(f"Unexpected error occurred while fetching files from GitHub: {e}")
-            raise
+            logger.error(f"Unexpected error while fetching XML files: {e}")
+            return [], []
 
     def push_xml_files_to_github(self,
                                  repo_name: str,
