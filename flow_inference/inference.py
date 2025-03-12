@@ -73,7 +73,7 @@ class Inference:
         logger.debug(f"Inference class initialized with repo_name={repo_name}, directory={directory}, "
                      f"in_path={self.in_path}, out_path={self.out_path}")
 
-    async def perform_inference(self) -> None:
+    async def perform_inference(self) -> Optional[Dict[str, str]]:
         """
         Perform inference.
 
@@ -124,6 +124,7 @@ class Inference:
         if self.callback:
             await self.callback(self.progressStatus.model_dump(by_alias=True))
         logger.info("Inference process completed successfully.")
+        return inferred_lines
 
     async def run_inference(self, image_files: List[str]) -> Optional[Dict[str, str]]:
         """
