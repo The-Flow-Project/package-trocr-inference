@@ -1,88 +1,100 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
-import os
-from typing import List, Tuple
-import dotenv
-from flow_githubmanager.github_interaction import GitHubManager
-from requests.exceptions import HTTPError
+from typing import Optional, List, Dict, Union
+from datasets import load_dataset
+from PIL import Image
+import pandas as pd
+import io
 from flow_inference.utils.logging.inference_logger import logger
 
 
 # ===============================================================================
 # CLASS
 # ===============================================================================
-class DataHandler:
+class HuggingFaceDataHandler:
     """
-    Class for handling logic related to file transfers from and to GitHub repositories.
+    Lightweight loader that mirrors HuggingFacePreprocessor's dataset fetching
+    behavior, but skips XML parsing and conversion steps.
     """
 
-    def __init__(self, download_path: str, upload_path: str):
+    def __init__(self,
+                 dataset_id: str,
+                 huggingface_token: Optional[str] = None):
         """
-        :param download_path: the (local) path the files are taken from.
-        :param upload_path: the (local) path the files are taken from when uploaded.
-        """
-        dotenv.load_dotenv()
-        access_token = os.getenv("GITHUB_ACCESS_TOKEN")
-        if not access_token:
-            raise ValueError("GitHub access token not found in environment variables.")
-        self.github_manager = GitHubManager(access_token)
-        self.in_path = download_path
-        self.out_path = upload_path
+        Initialize the loader.
 
-    def fetch_xml_files_from_github(self,
-                                    repo_name: str,
-                                    folder_path: str,
-                                    download_path: str) -> Tuple[List[str], List[str]]:
+        :param dataset_id: e.g., "my-org/my-preprocessed-dataset"
+        :param huggingface_token: Hugging Face authentication token (for private datasets)
         """
-        Fetches XML files from GitHub.
+        self.dataset_id = dataset_id
+        self.huggingface_token = huggingface_token
+        self.dataset: Optional[pd.DataFrame] = None
+        self.df: Optional[pd.DataFrame] = None
+        self.state: str = 'initialized'
 
-        :param folder_path: the folder name in the repository.
-        :param repo_name: the name of the GitHub repository the files are fetched from.
-        :param download_path: the (local) path the files are downloaded to.
-        :return: Tuple consisting of list of files which were downloaded from the GitHub repository and
-        list of files which couldn't be downloaded.
+    # ---------------------------------------------------------------------------
+    # DOWNLOAD
+    # ---------------------------------------------------------------------------
+    def download(self) -> None:
+        """
+        Download the dataset from Hugging Face Hub using the datasets library.
         """
         try:
-            logger.info(f"Attempting to fetch XML files from repo '{repo_name}' in folder '{folder_path}'...")
-            fetched_files, failed_files = self.github_manager.fetch_files(repo_name,
-                                                                          folder_path,
-                                                                          ".xml",
-                                                                          download_path)
-            return fetched_files, failed_files
-        except ConnectionError as e:
-            logger.error(f"Network issue while fetching XML files: {e}")
-            return [], []
-        except FileNotFoundError as e:
-            logger.error(f"Repository folder not found: {e}")
-            return [], []
+            logger.info(f"Downloading dataset from Hugging Face: {self.dataset_id}")
+            self.dataset = load_dataset(self.dataset_id, split="train", token=self.huggingface_token)
+            self.state = 'downloaded'
+            logger.info(f"Successfully loaded dataset: {self.dataset_id}")
+            logger.info(f"Columns: {self.dataset.column_names}")
         except Exception as e:
-            logger.error(f"Unexpected error while fetching XML files: {e}")
-            return [], []
+            self.state = 'failed'
+            logger.error(f"Failed to download dataset {self.dataset_id}: {e}")
+            raise e
 
-    def push_xml_files_to_github(self,
-                                 repo_name: str,
-                                 file_paths: List[str]) -> None:
+    # ---------------------------------------------------------------------------
+    # CONVERSION
+    # ---------------------------------------------------------------------------
+    def to_dataframe(self) -> pd.DataFrame:
         """
-        Pushes XML to a GitHub repository.
+        Convert the loaded dataset to a pandas DataFrame.
+        """
+        if self.dataset is None:
+            logger.error("Dataset not loaded. Call download() first.")
+            raise RuntimeError("Dataset not loaded. Call download() first.")
 
-        :param repo_name: the name of the GitHub repository the files are pushed to.
-        :param file_paths: the files which are uploaded to the GitHub repository (with their paths specified).
-        :return: None.
+        logger.info("Converting Hugging Face dataset to pandas DataFrame...")
+        self.df = self.dataset.to_pandas()
+        self.state = 'converted'
+        logger.info("Dataset converted to DataFrame successfully.")
+        return self.df
+
+    # ---------------------------------------------------------------------------
+    # IMAGE EXTRACTION
+    # ---------------------------------------------------------------------------
+    def get_image_records(self) -> List[Dict[str, Union[Image.Image, str]]]:
         """
-        try:
-            logger.info(f"Attempting to push {len(file_paths)} XML files to repo '{repo_name}'...")
-            self.github_manager.upload_documents(repo_name, file_paths, folder_name="inference")
-            logger.info(f"Successfully pushed {len(file_paths)} XML files to the GitHub repository.")
-        except HTTPError as e:
-            logger.error(f"HTTP error occurred while pushing files to GitHub: {e}")
-            raise
-        except FileNotFoundError as e:
-            logger.error(f"File not found error occurred during file upload to GitHub: {e}")
-            raise
-        except ValueError as e:
-            logger.error(f"Value error occurred while pushing files: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error occurred while pushing files to GitHub: {e}")
-            raise
+        Extract images and metadata from the dataset for inference.
+
+        :return: A list of dicts with keys: image, xml, filename, project
+        """
+        if self.df is None:
+            self.to_dataframe()
+
+        logger.info("Extracting images and metadata for inference...")
+        records = []
+
+        for _, row in self.df.iterrows():
+            img = row.get("image")
+            if isinstance(img, (bytes, bytearray)):
+                img = Image.open(io.BytesIO(img)).convert("RGB")
+
+            records.append({
+                "image": img,
+                "xml": row.get("xml"),
+                "filename": row.get("filename"),
+                "project": row.get("project"),
+            })
+
+        logger.info(f"Extracted {len(records)} image records for inference.")
+        self.state = 'ready'
+        return records
