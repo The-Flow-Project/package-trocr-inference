@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 from typing import List, Optional, Tuple
 from evaluate import load
-from flow_inference.data_handling import DataHandler
+from flow_inference.data_handling import HuggingFaceDataHandler
 from flow_inference.inference import Inference
 from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.xml_processing import XMLProcessor
@@ -31,7 +31,7 @@ class Evaluation:
         os.makedirs(self.out_path, exist_ok=True)
 
         # initialise DataHandler
-        self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
+        # self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
 
     # TODO: perform line segmentation if XML not segmented yet
     @staticmethod
@@ -94,8 +94,8 @@ class Evaluation:
         """
         inference = Inference(
             process_id=self.process_id,
-            repo_name=self.repo_name,
-            github_access_token=self.github_access_token,
+            hf_repo_name=self.repo_name,
+            hf_token=self.github_access_token,
             directory=self.directory
         )
 

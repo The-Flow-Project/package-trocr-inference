@@ -49,9 +49,9 @@ class TestEvaluation(unittest.TestCase):
         )
         self.inference = Inference(
             process_id=self.test_repo_base_path,
-            repo_name=self.test_repo_name,
+            hf_repo_name=self.test_repo_name,
             directory=self.test_directory,
-            github_access_token=None,
+            hf_token=None,
             trocr_model="microsoft/trocr-small-handwritten"
         )
         self.evaluator = Evaluation(

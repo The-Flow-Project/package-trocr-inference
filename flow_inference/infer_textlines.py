@@ -97,7 +97,7 @@ class InferenceHandler:
         return inferred_txt
 
     def infer(self,
-              file_names: List[str],
+              file_names: List[dict],
               image_handler: ImageHandler,
               **kwargs,
               ) -> List[str]:
