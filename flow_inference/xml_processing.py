@@ -31,6 +31,25 @@ class XMLProcessor:
         self.xmlns = f'{{{self.namespace_uri}}}'
 
     @staticmethod
+    def from_string(xml_content: str) -> "XMLProcessor":
+        """
+        Create an XMLProcessor instance from a raw XML string instead of a file path.
+        """
+        import xml.etree.ElementTree as et
+
+        try:
+            tree = et.ElementTree(et.fromstring(xml_content))
+            instance = XMLProcessor.__new__(XMLProcessor)
+            instance.tree = tree
+            instance.root = tree.getroot()
+            instance.namespace_uri = instance.root.tag.split('}')[0][1:]
+            instance.namespace = {'prefix': instance.namespace_uri}
+            instance.xmlns = f'{{{instance.namespace_uri}}}'
+            return instance
+        except et.ParseError as e:
+            raise ValueError(f"Failed to parse XML string: {e}") from e
+
+    @staticmethod
     def parse_xml(xml_path: str) -> ElementTree:
         """
         Parses an XML file and returns the root element.
