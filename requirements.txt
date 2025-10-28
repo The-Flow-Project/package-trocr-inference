@@ -1,13 +1,18 @@
 fastapi~=0.115.6
 python-dotenv~=1.0.1
-flow_githubmanager~=0.1.0
-flow_preprocessor~=0.4
-torch~=2.4.1
+flow_githubmanager @ git+https://github.com/The-Flow-Project/package-github-api@main
+flow_preprocessor @ git+https://github.com/The-Flow-Project/package-preprocessing@main
+torch==2.4.1
+torchvision==0.19.1
 transformers~=4.45.2
 pillow~=11.0.0
 tqdm~=4.66.5
 PyYAML~=6.0.2
 requests~=2.32.3
-pydantic~=2.8.2
-setuptools~=70.2.0
+pydantic~=2.11.4
+setuptools>=78.1.1
 evaluate~=0.4.3
+flow_preprocessor~=0.4
+flow_githubmanager~=0.1.0
+pandas~=2.3.0
+datasets~=3.6.0
