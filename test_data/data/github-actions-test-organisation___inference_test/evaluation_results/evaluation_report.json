@@ -1,8 +1,0 @@
-{
-    "date": "2025-03-12 16:45:44",
-    "model_name": "dummy-model",
-    "hf_url": "https://dummy.url",
-    "num_lines_hypothesis": 2,
-    "num_lines_gt": 2,
-    "cer_score": 0.1
-}
