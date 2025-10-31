@@ -1,11 +1,10 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
-from typing import Optional, List, Dict, Union
-from datasets import load_dataset
-from PIL import Image
+from typing import List, Dict
+from datasets import load_dataset, Split
 import pandas as pd
-import io
+from datasets.exceptions import *
 from flow_inference.utils.logging.inference_logger import logger
 
 
@@ -14,42 +13,63 @@ from flow_inference.utils.logging.inference_logger import logger
 # ===============================================================================
 class HuggingFaceDataHandler:
     """
-    Lightweight loader that mirrors HuggingFacePreprocessor's dataset fetching
-    behavior, but skips XML parsing and conversion steps.
+    Download and convert Hugging Face datasets
     """
 
     def __init__(self,
-                 dataset_id: str,
-                 huggingface_token: Optional[str] = None):
+                 dataset_name: str,
+                 huggingface_token: str | None = None,
+                 split: str | Split | None = None):
         """
-        Initialize the loader.
+        Initialize the dataset loader.
 
-        :param dataset_id: e.g., "my-org/my-preprocessed-dataset"
+        :param dataset_name: e.g., "my-org/my-preprocessed-dataset"
         :param huggingface_token: Hugging Face authentication token (for private datasets)
         """
-        self.dataset_id = dataset_id
+        self.dataset_name = dataset_name
         self.huggingface_token = huggingface_token
+        self.split = split
         self.dataset: Optional[pd.DataFrame] = None
         self.df: Optional[pd.DataFrame] = None
         self.state: str = 'initialized'
 
     # ---------------------------------------------------------------------------
-    # DOWNLOAD
+    # DOWNLOAD DATASETS
     # ---------------------------------------------------------------------------
     def download(self) -> None:
         """
-        Download the dataset from Hugging Face Hub using the datasets library.
+        Download the dataset from Hugging Face Hub using the Datasets library.
         """
         try:
-            logger.info(f"Downloading dataset from Hugging Face: {self.dataset_id}")
-            self.dataset = load_dataset(self.dataset_id, split="train", token=self.huggingface_token)
-            self.state = 'downloaded'
-            logger.info(f"Successfully loaded dataset: {self.dataset_id}")
-            logger.info(f"Columns: {self.dataset.column_names}")
-        except Exception as e:
-            self.state = 'failed'
-            logger.error(f"Failed to download dataset {self.dataset_id}: {e}")
-            raise e
+            logger.info(f"Downloading dataset: {self.dataset_name} (split={self.split})")
+
+            if self.split:
+                # dataset has explicit split
+                self.dataset = load_dataset(
+                    self.dataset_name, split=self.split, token=self.huggingface_token
+                )
+            else:
+                # load full dataset (no split argument)
+                self.dataset = load_dataset(self.dataset_name, token=self.huggingface_token)
+
+            self.state = "downloaded"
+            logger.info(f"Successfully loaded dataset: {self.dataset_name}")
+        except DatasetNotFoundError as e:
+            self.state = "failed"
+            logger.error(f"Dataset not found: '{self.dataset_name}'. Check spelling or visibility/access rights.")
+            raise
+        except UnexpectedDownloadedFileError as e:
+            self.state = "failed"
+            logger.error(f"Some of the downloaded files did not match the requirements.")
+            raise
+        except UnexpectedSplitsError as e:
+            self.state = "failed"
+            logger.error(f"The expected split of the downloaded files is missing.")
+            raise
+        except DatasetsError as e:
+            self.state = "failed"
+            logger.error(f"Something else went wrong when trying to access the dataset on Hugging Face.")
+            raise
 
     # ---------------------------------------------------------------------------
     # CONVERSION
@@ -68,33 +88,22 @@ class HuggingFaceDataHandler:
         logger.info("Dataset converted to DataFrame successfully.")
         return self.df
 
-    # ---------------------------------------------------------------------------
-    # IMAGE EXTRACTION
-    # ---------------------------------------------------------------------------
-    def get_image_records(self) -> List[Dict[str, Union[Image.Image, str]]]:
+    def convert_df_into_dict_list(self) -> List[Dict[str, object]]:
         """
-        Extract images and metadata from the dataset for inference.
+        Convert the loaded Hugging Face dataset (self.df) into a list of dictionaries.
 
-        :return: A list of dicts with keys: image, xml, filename, project
+        - Includes all columns as they exist in the dataset.
+        - Does not modify or interpret any values (no image conversions).
+        - Works for any dataset schema.
         """
         if self.df is None:
             self.to_dataframe()
 
-        logger.info("Extracting images and metadata for inference...")
-        records = []
+        logger.info("Converting DataFrame rows into dictionaries...")
+        records = [row.to_dict() for _, row in self.df.iterrows()]
 
-        for _, row in self.df.iterrows():
-            img = row.get("image")
-            if isinstance(img, (bytes, bytearray)):
-                img = Image.open(io.BytesIO(img)).convert("RGB")
-
-            records.append({
-                "image": img,
-                "xml": row.get("xml"),
-                "filename": row.get("filename"),
-                "project": row.get("project"),
-            })
-
-        logger.info(f"Extracted {len(records)} image records for inference.")
-        self.state = 'ready'
+        logger.info(f"Converted {len(records)} records with {len(self.df.columns)} columns.")
+        self.state = "ready"
         return records
+
+
