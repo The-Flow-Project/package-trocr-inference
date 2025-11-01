@@ -1,7 +1,8 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
-from typing import Tuple
+import io
+from typing import Tuple, Dict, Any
 from PIL import Image, ImageOps
 from transformers import TrOCRProcessor
 import torch
@@ -29,21 +30,14 @@ class ImageHandler:
         self.target_image_size = target_image_size
 
     @staticmethod
-    def load_image(file_name: str) -> Image:
+    def load_image_from_bytes(image_bytes: bytes) -> Image:
         """
-        Load an image and convert it to RGB.
-
-        :param file_name: The filename of the image to load.
-        :return: The loaded image as PIL image.
+        Load an image from raw bytes and convert it to RGB.
         """
         try:
-            return Image.open(file_name).convert('RGB')
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"Image file '{file_name}' not found. {str(e)}")
-        except IOError as e:
-            raise IOError(f"IO error occurred while loading the image '{file_name}'. {str(e)}")
+            return Image.open(io.BytesIO(image_bytes)).convert('RGB')
         except Exception as e:
-            raise Exception(f"Unexpected error occurred while loading the image '{file_name}': {str(e)}")
+            raise IOError(f"Failed to load image from bytes: {e}")
 
     def resize_with_aspect_ratio(self, image: Image) -> Image:
         """
@@ -82,37 +76,47 @@ class ImageHandler:
         except Exception as e:
             raise Exception(f"Unexpected error during image processing: {str(e)}")
 
-    def handle_image(self, file_name: str) -> torch.Tensor:
+    def handle_image(self, record: Dict[str, Any]) -> torch.Tensor:
         """
-        Full pipeline to load, resize (optionally), and process an image.
+        Process a single record containing image bytes and metadata.
 
-        :param file_name: The filename of the image to be processed.
-        :return: The processed image as a torch.Tensor.
+        Expected record format:
+        {
+            "Image": bytes,
+            "filename": str,
+            "line_id": str,
+            ...
+        }
         """
+        filename = record.get("filename", "<unknown>")
+
         try:
-            image = self.load_image(file_name)
+            # ✅ Step 1: extract and convert
+            image_data = record.get("Image")
+            if image_data is None:
+                raise ValueError("Record does not contain an 'Image' field.")
 
+            if isinstance(image_data, bytes):
+                image = self.load_image_from_bytes(image_data)
+            elif isinstance(image_data, Image.Image):
+                image = image_data.convert("RGB")
+            else:
+                raise TypeError(f"Unsupported image type: {type(image_data)}")
+
+            # Step 2: resize (if needed)
             if self.target_image_size:
                 if image.size[0] < self.target_image_size[0] or image.size[1] < self.target_image_size[1]:
-                    logger.info(f"Resizing with aspect ratio due to image size: {image.size}")
+                    logger.debug(f"Resizing with padding for {filename} (original size {image.size})")
                     image = self.resize_with_aspect_ratio(image)
                 else:
-                    logger.info(f"Resizing image to {self.target_image_size}")
+                    logger.debug(f"Resizing image {filename} to {self.target_image_size}")
                     image = image.resize(self.target_image_size, Image.Resampling.LANCZOS)
 
+            # Step 3: convert to tensor
             processed_image = self.process_image(image)
-
-            logger.info(f"Successfully processed image: {file_name}")
+            logger.info(f"Successfully processed image: {filename}")
             return processed_image
-        except FileNotFoundError as e:
-            logger.error(f"Image file not found: {file_name}. {str(e)}")
-            raise
-        except IOError as e:
-            logger.error(f"IO error occurred while loading image: {file_name}. {str(e)}")
-            raise
-        except ValueError as e:
-            logger.error(f"Value error occurred while processing image: {file_name}. {str(e)}")
-            raise
+
         except Exception as e:
-            logger.error(f"Unexpected error during image handling for {file_name}: {str(e)}")
+            logger.error(f"Error processing record {filename}: {e}")
             raise
