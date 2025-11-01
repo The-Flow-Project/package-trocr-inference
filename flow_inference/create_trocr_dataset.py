@@ -3,7 +3,6 @@
 # ===============================================================================
 from torch.utils.data import Dataset
 from typing import List, Dict
-from PIL import Image
 from flow_inference.image_processing import ImageHandler
 from flow_inference.utils.logging.inference_logger import logger
 
@@ -39,23 +38,20 @@ class TrOCRInferenceDataset(Dataset):
         :param idx: Index of the image to retrieve.
         """
         record = self.records[idx]
-        file_name = record.get("filename") or f"line_{idx}.png"
-        image = record.get("image")
+        filename = record.get("filename") or f"line_{idx}.png"
 
-        logger.debug(f"Fetching in-memory image: {file_name} at index: {idx}")
-
-        if image is None or not isinstance(image, Image.Image):
-            logger.error(f"Invalid or missing image at index {idx} ({file_name})")
-            raise ValueError(f"Invalid or missing image at index {idx} ({file_name})")
+        logger.debug(f"Fetching in-memory image: {filename} at index: {idx}")
 
         try:
-            pixel_values = self.image_handler.process_image(image)
-            encoding = {'pixel_values': pixel_values, 'file_name': file_name}
-            logger.debug(f"Successfully processed image: {file_name}")
-            return encoding
+            pixel_values = self.image_handler.handle_image(record)
+
+            return {
+                "pixel_values": pixel_values,
+                "filename": filename
+            }
         except ValueError as e:
-            logger.error(f"Value error while processing image: {file_name}. Error: {e}")
+            logger.error(f"Value error while processing image: {filename}. Error: {e}")
             raise
         except Exception as e:
-            logger.error(f"Unexpected error while processing image: {file_name}. Error: {e}")
+            logger.error(f"Unexpected error while processing image: {filename}. Error: {e}")
             raise
