@@ -36,18 +36,18 @@ class InferenceHandler:
         Custom collate function to stack images and file name.
 
         :param batch: list of dictionaries with keys 'pixel_values' and 'file_name'.
-        :return: dictionary with keys 'pixel_values' and 'file_names'.
+        :return: dictionary with keys 'pixel_values' and 'filenames'.
         """
         try:
             pixel_values = [item['pixel_values'] for item in batch]
-            file_names = [item['file_name'] for item in batch]
+            filenames = [item['filename'] for item in batch]
         except KeyError as e:
             raise KeyError(f"Missing expected key in batch item: {e}")
 
         # stack action
         pixel_values = torch.stack(pixel_values)
 
-        return {'pixel_values': pixel_values, 'file_names': file_names}
+        return {'pixel_values': pixel_values, 'filenames': filenames}
 
     @staticmethod
     def run_batch_inference(inference_dataloader: DataLoader,
@@ -89,7 +89,7 @@ class InferenceHandler:
                 logger.error(f"Error decoding predictions: {e}")
                 raise ValueError(f"Error decoding predictions: {e}")
 
-            file_names = batch['file_names']
+            file_names = batch['filenames']
             line = [f'{os.path.basename(file_name)}\t{pred}' for file_name, pred in zip(file_names, pred_str)]
             inferred_txt.extend(line)
 
@@ -97,7 +97,7 @@ class InferenceHandler:
         return inferred_txt
 
     def infer(self,
-              file_names: List[dict],
+              records: List[dict],
               image_handler: ImageHandler,
               **kwargs,
               ) -> List[str]:
@@ -111,7 +111,7 @@ class InferenceHandler:
         max_new_tokens = kwargs.get('max_new_tokens', 100)
         batch_size = kwargs.get('batch_size', 8)
 
-        if not file_names:
+        if not records:
             logger.error("No file names provided for inference.")
             raise ValueError("No file names provided for inference.")
 
@@ -119,11 +119,11 @@ class InferenceHandler:
             logger.error(f"Invalid type for image_handler: expected ImageHandler, got {type(image_handler)}")
             raise TypeError("image_handler must be an instance of ImageHandler.")
 
-        logger.info(f"Preparing dataset for inference with {len(file_names)} lines.")
+        logger.info(f"Preparing dataset for inference with {len(records)} lines.")
 
         try:
             inference_dataset = TrOCRInferenceDataset(
-                file_names=file_names,
+                records=records,
                 image_handler=image_handler
             )
 
