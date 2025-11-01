@@ -38,7 +38,7 @@ class TrOCRInferenceDataset(Dataset):
         :param idx: Index of the image to retrieve.
         """
         record = self.records[idx]
-        filename = record.get("filename") or f"line_{idx}.png"
+        filename = record.get("filename")
 
         logger.debug(f"Fetching in-memory image: {filename} at index: {idx}")
 
