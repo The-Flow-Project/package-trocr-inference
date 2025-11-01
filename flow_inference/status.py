@@ -2,8 +2,7 @@
 # IMPORT STATEMENTS
 # ===============================================================================
 from datetime import datetime
-from typing import List, Optional
-from flow_inference.models import InferenceState, StateEnum
+from typing import Optional
 from flow_inference.utils.logging.inference_logger import logger
 
 
@@ -11,102 +10,102 @@ from flow_inference.utils.logging.inference_logger import logger
 # CLASS
 # ===============================================================================
 class Status:
-    def __init__(self, state: InferenceState) -> None:
+    def __init__(self) -> None:
         """
         initialise class parameters.
-
-        :param state: the state of the inference.
         """
-        self.state = state
-        logger.debug(f"Initialized Status with state: {self.state}")
+        self.start_time = None
+        self.total_files = 0
+        self.successful = 0
+        self.failed_download = 0
+        self.failed_inference = 0
+        logger.debug(f"Initialized Status.")
 
-    def initialize_status(self, files_fetched: List) -> InferenceState:
+    def initialize_status(self, total_files: int):
         """
         Initialize status.
 
-        :param files_fetched: the list of files fetched.
+        :param total_files: the list of files fetched.
         :return: the status of the inference.
         """
-        logger.debug(f"Initializing status with {len(files_fetched)} fetched files.")
+        self.start_time = datetime.now()
+        self.total_files = total_files
+        self.successful = 0
+        self.failed_download = 0
+        self.failed_inference = 0
+        logger.info(f"Starting inference on {total_files} files.")
 
-        self.state.files_total = len(files_fetched)
-        self.state.state = StateEnum.IN_PROGRESS
-        self.state.runtime = 0
-        self.state.created_at = datetime.now()
-
-        logger.debug(f"Status initialized: {self.state.files_total} files to process.")
-        return InferenceState(**self.state.model_dump(by_alias=True))
-
-    def calculate_runtime(self) -> int:
+    def calculate_runtime(self) -> str:
         """
         Calculate runtime.
 
         :return: runtime in seconds as int.
         """
-        delta = datetime.now() - self.state.created_at
-        runtime = int(delta.total_seconds())
-        logger.debug(f"Calculated runtime: {runtime} seconds.")
-        return runtime
+        delta = datetime.now() - self.start_time
+        total_sec = int(delta.total_seconds())
+        if total_sec < 60:
+            return f"{total_sec}s"
+        minutes, seconds = divmod(total_sec, 60)
+        return f"{minutes}m {seconds}s"
 
     def calculate_processed_files(self) -> int:
         """
-        Calculate the number of files processed (success, failed download, failed inference).
-        :return: Total processed files.
+        Calculate number of processed files.
         """
-        processed_files = (self.state.files_successful
-                           + self.state.files_failed_download
-                           + self.state.files_failed_inference)
+        processed_files = self.successful + self.failed_download + self.failed_inference
         logger.debug(f"Calculated processed files: {processed_files}.")
         return processed_files
 
-    def update_progress(self, status_type: Optional[str] = None,
-                        current_item_name: Optional[str] = None,
-                        state_enum: Optional[StateEnum] = None) -> InferenceState:
+    def update_progress(self,
+                        status_type: Optional[str] = None,
+                        current_item_name: Optional[str] = None):
         """
         Update progress based on file status or inference state.
         """
-        logger.debug(f"Updating progress for item: {current_item_name}. Status type: {status_type}")
 
-        if status_type:
-            self._update_file_status(status_type, current_item_name)
+        if status_type and current_item_name:
+            self.update_file_status(status_type, current_item_name)
 
         processed_files = self.calculate_processed_files()
-        self.state.progress = int((processed_files / self.state.files_total) * 100) if self.state.files_total > 0 else 0
-        self.state.runtime = self.calculate_runtime()
+        progress = int((processed_files / self.total_files) * 100) if self.total_files > 0 else 0
+        runtime = self.calculate_runtime()
 
-        if state_enum:
-            self.state.state = state_enum
-            logger.debug(f"State updated to: {self.state.state}")
+        logger.info(
+            f"Progress: {progress}% ({processed_files}/{self.total_files}) "
+            f"| Runtime: {runtime}"
+        )
 
-        logger.debug(f"Progress updated: {self.state.progress}% complete.")
-        return InferenceState(**self.state.model_dump(by_alias=True))
-
-    def _update_file_status(self, status_type: str, current_item_name: str):
+    def update_file_status(self, status_type: str, file_name: str):
         """
         Helper function to update file-specific statuses.
         """
-        logger.debug(f"Updating file status for {current_item_name}. Status type: {status_type}")
-
         if status_type == "failure_download":
-            if self.state.filenames_failed_download is None:
-                self.state.filenames_failed_download = []
-            self.state.files_failed_download += 1
-            self.state.filenames_failed_download.append(current_item_name)
+            self.failed_download += 1
             logger.warning(
-                f"Download failed for file: {current_item_name}. Total failed downloads: {self.state.files_failed_download}")
+                f"Download failed for file: {file_name} "
+                f"(Total failed downloads: {self.failed_download})"
+            )
 
         elif status_type == "failure_inference":
-            if self.state.filenames_failed_inference is None:
-                self.state.filenames_failed_inference = []
-            self.state.files_failed_inference += 1
-            self.state.filenames_failed_inference.append(current_item_name)
+            self.failed_inference += 1
             logger.error(
-                f"Inference failed for file: {current_item_name}. Total failed inferences: {self.state.files_failed_inference}")
+                f"Inference failed for file: {file_name} "
+                f"(Total failed inferences: {self.failed_inference})"
+            )
 
         elif status_type == "success":
-            if self.state.filenames_successful is None:
-                self.state.filenames_successful = []
-            self.state.files_successful += 1
-            self.state.filenames_successful.append(current_item_name)
+            self.successful += 1
             logger.info(
-                f"File processed successfully: {current_item_name}. Total successful files: {self.state.files_successful}")
+                f"File processed successfully: {file_name} "
+                f"(Total successful files: {self.successful})"
+            )
+
+        else:
+            logger.debug(f"Unknown status type '{status_type}' for file {file_name}.")
+
+    def summary(self):
+        logger.info("Inference completed.")
+        logger.info(f"Successful: {self.successful}")
+        logger.info(f"Failed downloads: {self.failed_download}")
+        logger.info(f"Failed inference: {self.failed_inference}")
+        logger.info(f"Total runtime: {self.calculate_runtime()}")
