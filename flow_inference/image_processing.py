@@ -80,9 +80,9 @@ class ImageHandler:
         """
         Process a single record containing image bytes and metadata.
 
-        Expected record format:
+        Expected record format examples:
         {
-            "Image": bytes,
+            "image": bytes | {"bytes": bytes, "path": None} | PIL.Image,
             "filename": str,
             "line_id": str,
             ...
@@ -91,11 +91,16 @@ class ImageHandler:
         filename = record.get("filename", "<unknown>")
 
         try:
-            # ✅ Step 1: extract and convert
-            image_data = record.get("Image")
+            # Step 1: extract and normalize image data
+            image_data = record.get("image")
             if image_data is None:
-                raise ValueError("Record does not contain an 'Image' field.")
+                raise ValueError("Record does not contain an 'image' field.")
 
+            # Unwrap Hugging Face Image objects
+            if isinstance(image_data, dict) and "bytes" in image_data:
+                image_data = image_data["bytes"]
+
+            # Convert to PIL
             if isinstance(image_data, bytes):
                 image = self.load_image_from_bytes(image_data)
             elif isinstance(image_data, Image.Image):
@@ -103,7 +108,7 @@ class ImageHandler:
             else:
                 raise TypeError(f"Unsupported image type: {type(image_data)}")
 
-            # Step 2: resize (if needed)
+            # Step 2: optional resizing
             if self.target_image_size:
                 if image.size[0] < self.target_image_size[0] or image.size[1] < self.target_image_size[1]:
                     logger.debug(f"Resizing with padding for {filename} (original size {image.size})")
@@ -112,7 +117,7 @@ class ImageHandler:
                     logger.debug(f"Resizing image {filename} to {self.target_image_size}")
                     image = image.resize(self.target_image_size, Image.Resampling.LANCZOS)
 
-            # Step 3: convert to tensor
+            # Step 3: process through the processor
             processed_image = self.process_image(image)
             logger.info(f"Successfully processed image: {filename}")
             return processed_image

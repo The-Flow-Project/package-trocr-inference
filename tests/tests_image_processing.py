@@ -26,7 +26,7 @@ class TestImageHandler(unittest.TestCase):
 
         # Create record dict similar to dataset row
         cls.sample_record = {
-            "Image": cls.image_bytes,
+            "image": cls.image_bytes,
             "filename": "test_image.png",
             "line_id": "L0001"
         }
