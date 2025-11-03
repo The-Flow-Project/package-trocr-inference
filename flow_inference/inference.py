@@ -153,7 +153,7 @@ class Inference:
 
         # Create unique timestamped column name
         timestamp = datetime.now().isoformat(timespec="seconds").replace(":", "-")
-        new_col = f"inference_{timestamp}"
+        new_col = f"inference_{timestamp}_model_{self.trocr_model}"
 
         updated_df[new_col] = None
 
