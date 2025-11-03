@@ -6,6 +6,8 @@ from typing import Dict, Optional
 from xml.dom import minidom
 from xml.etree.ElementTree import ElementTree, Element
 
+import pandas as pd
+
 
 # ===============================================================================
 # CLASS
@@ -151,3 +153,48 @@ class XMLProcessor:
         """
         text_lines = self.root.findall(f".//{self.xmlns}TextLine")
         return [self.extract_text_from_textline(line) for line in text_lines if self.extract_text_from_textline(line)]
+
+    def update_raw_xml_in_records(
+            self,
+            inferred_lines: Dict[str, str],
+            original_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Update the raw XML column in the DataFrame with its corresponding inference results.
+        Returns the updated DataFrame.
+        """
+
+        updated_df = original_df.copy()
+        updated_count = 0
+
+        for idx, row in updated_df.iterrows():
+            filename = row.get("filename")
+            raw_xml = row.get("xml")
+
+            if not raw_xml:
+                logger.debug(f"No XML found for {filename}. Skipping.")
+                continue
+
+            inferred_text = inferred_lines.get(filename)
+            if not inferred_text:
+                continue
+
+            try:
+                xml_processor = XMLProcessor.from_string(raw_xml)
+                xml_processor.insert_inferred_lines(
+                    root=xml_processor.root,
+                    inferred_lines={filename: inferred_text}
+                )
+
+                # Convert updated XML tree back to string
+                import io
+                xml_str = io.StringIO()
+                xml_processor.tree.write(xml_str, encoding="unicode")
+                updated_df.at[idx, "xml"] = xml_str.getvalue()
+                updated_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to update XML for {filename}: {e}")
+
+        logger.info(f"Updated XML for {updated_count} records successfully.")
+        return updated_df
