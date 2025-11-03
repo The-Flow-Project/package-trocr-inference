@@ -49,6 +49,7 @@ class TestInference(unittest.TestCase):
         # Check that the inference column has some non-null entries
         inferred_values = result_df[inference_cols[0]].dropna()
         self.assertTrue(len(inferred_values) > 0, "Inference column is empty")
+
     def test_run_inference_returns_dict(self):
         """Ensure run_inference() produces a dictionary of results."""
         from flow_inference.data_handling import HuggingFaceDataHandler
