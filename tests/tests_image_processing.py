@@ -1,8 +1,7 @@
 import io
 import unittest
 import torch
-import os
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from transformers import TrOCRProcessor
 from flow_inference.image_processing import ImageHandler
 

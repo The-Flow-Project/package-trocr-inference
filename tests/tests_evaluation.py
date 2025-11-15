@@ -49,7 +49,7 @@ class TestEvaluation(unittest.TestCase):
         )
         self.inference = Inference(
             process_id=self.test_repo_base_path,
-            hf_repo_name=self.test_repo_name,
+            download_repo_name=self.test_repo_name,
             directory=self.test_directory,
             hf_token=None,
             trocr_model="microsoft/trocr-small-handwritten"

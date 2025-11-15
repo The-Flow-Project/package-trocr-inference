@@ -13,7 +13,7 @@ import os
 class TestInferenceHandler(unittest.TestCase):
 
     def setUp(self):
-        """Set up model, processor, and small in-memory dataset from Hugging Face."""
+        """Set up model, processor, and small dataset from Hugging Face."""
         load_dotenv()
         hf_token = os.getenv("HUGGINGFACE_TOKEN_READ")
         hf_repo_name = os.getenv("HUGGINGFACE_DOWNLOAD_REPO_NAME")
@@ -21,23 +21,35 @@ class TestInferenceHandler(unittest.TestCase):
         if not hf_token or not hf_repo_name:
             self.skipTest("Missing Hugging Face token or repo name in .env")
 
-        # STEP 1: Load dataset from Hugging Face (in-memory images)
+        # STEP 1: Load dataset from Hugging Face (now supports multiple splits)
         handler = HuggingFaceDataHandler(
             dataset_name=hf_repo_name,
             huggingface_token=hf_token,
-            split="train"
         )
-        handler.download()
-        handler.to_dataframe()
-        self.records = handler.convert_df_into_dict_list()[:2]  # just take 2 samples for speed
+        handler.download_hf_dataset()
+        dfs = handler.to_dataframe()
+        records_dict = handler.convert_to_list_of_dicts(dfs)
 
-        # ✅ Minimal fix — unwrap Hugging Face image dicts
-        image_obj = self.records[0]["image"]
+        # pick a split to test (train preferred, otherwise first available)
+        if "train" in records_dict:
+            split_name = "train"
+        else:
+            split_name = next(iter(records_dict.keys()))
+
+        all_records = records_dict[split_name]
+        if not all_records:
+            self.skipTest(f"No records found in split '{split_name}'")
+
+        # take 2 samples for speed
+        self.records = all_records[:2]
+
+        # unwrap Hugging Face image dicts if needed
+        image_obj = self.records[0].get("image")
         if isinstance(image_obj, dict) and "bytes" in image_obj:
             for r in self.records:
                 r["image"] = r["image"]["bytes"]
 
-        # Validate structure
+        # validate structure
         assert isinstance(self.records[0]["image"], (bytes, bytearray)), "Expected image bytes in record"
 
         # STEP 2: Initialize model, processor, and inference handler
@@ -49,7 +61,7 @@ class TestInferenceHandler(unittest.TestCase):
         self.handler = InferenceHandler(model, processor, device)
         self.image_handler = ImageHandler(processor=processor, target_image_size=(384, 384))
 
-        # ⚡️ Speed up test: mock model.generate to skip real inference
+        # mock model.generate to skip real inference
         self.handler.model.generate = lambda x, **_: torch.zeros((x.size(0), 5), dtype=torch.long)
 
     def test_inference(self):

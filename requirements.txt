@@ -16,3 +16,4 @@ flow_preprocessor~=0.4
 flow_githubmanager~=0.1.0
 pandas~=2.3.0
 datasets~=3.6.0
+huggingface-hub~=0.33.0

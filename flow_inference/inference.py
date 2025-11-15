@@ -16,26 +16,34 @@ import pandas as pd
 # ===============================================================================
 class Inference:
     def __init__(self,
-                 hf_repo_name: str,
+                 download_repo_name: str,
                  hf_token: Optional[str],
                  trocr_model="microsoft/trocr-small-handwritten",
                  target_image_size: Tuple[int, int] = None,
                  stop_on_fail: bool = False,
+                 splits: Optional[List[str]] = None,
+                 push_to_hub: bool = True,
+                 private_repo: bool = True,
+                 upload_repo_name: Optional[str] = None
                  ) -> None:
 
-        self.hf_repo_name = hf_repo_name
+        self.download_repo_name = download_repo_name
         self.hf_token = hf_token
         self.trocr_model = trocr_model
         self.target_image_size = target_image_size
         self.stop_on_fail = stop_on_fail
+        self.requested_splits = splits or ["train"]
+        self.push_to_hub = push_to_hub
+        self.private_repo = private_repo
+        self.upload_repo_name = upload_repo_name or download_repo_name
         self.statusManager = Status()
 
-        logger.debug(f"Inference initialized with Hugging Face dataset: {hf_repo_name}")
+        logger.debug(f"Inference initialized with Hugging Face dataset: {download_repo_name}")
 
     # ===========================================================================
     # MAIN PIPELINE
     # ===========================================================================
-    def perform_inference(self) -> Optional[pd.DataFrame]:
+    def perform_inference(self) -> Optional[Dict[str, pd.DataFrame]]:
         """
         Perform the complete inference workflow:
         1. Download HF dataset
@@ -50,46 +58,66 @@ class Inference:
         # -------------------------------
         logger.debug("Downloading dataset from Hugging Face Hub.")
         loader = HuggingFaceDataHandler(
-            dataset_name=self.hf_repo_name,
-            huggingface_token=self.hf_token,
-            split='train'
+            dataset_name=self.download_repo_name,
+            huggingface_token=self.hf_token
         )
 
         try:
-            loader.download()
-            df = loader.to_dataframe()
-            records = loader.convert_df_into_dict_list()
+            loader.download_hf_dataset()
+            dfs = loader.to_dataframe()
+            records = loader.convert_to_list_of_dicts(dfs)
         except Exception as e:
             logger.error(f"Failed to load dataset from Hugging Face: {e}")
             return None
 
-        logger.info(f"Dataset loaded successfully: {len(records)} image records found.")
-        self.statusManager.initialize_status(len(records))
+        total_records = sum(len(r) for r in records.values())
+        self.statusManager.initialize_status(total_records)
+        logger.info(f"Dataset loaded successfully: {total_records} image records found.")
 
         # -------------------------------
         # STEP 2: Run inference
         # -------------------------------
         logger.debug("Running inference on image records.")
-        inferred_lines = self.run_inference(records)
 
-        if not inferred_lines:
-            logger.error("Inference failed or produced no results.")
-            self.statusManager.update_progress(status_type="failure_inference")
-            return None
+        inferred = {}
+
+        for split, recs in records.items():
+            if split in self.requested_splits or split == "default":
+                result = self.run_inference(recs)
+                inferred[split] = result if result is not None else {}
+            else:
+                inferred[split] = {}
 
         # -------------------------------
         # STEP 3: Write inference results
         # -------------------------------
-        logger.debug("Writing inference results to DataFrame.")
-        updated_df = self.save_results(inferred_lines, df)
+        logger.debug("Writing inference results to all DataFrames.")
+        updated_dfs = {}
+
+        for split, df_split in dfs.items():
+            updated_dfs[split] = self.save_results(
+                inferred_lines=inferred[split],
+                original_df=df_split
+            )
+
+        for split, df in updated_dfs.items():
+            for col in df.columns:
+                df[col] = df[col].astype("string")
+
+        if self.push_to_hub:
+            loader.df = updated_dfs
+            loader.push_to_hub(
+                upload_repo_name=self.upload_repo_name,
+                private=self.private_repo,
+                commit_message="Add inference results"
+            )
 
         logger.info("Inference process completed successfully.")
         logger.info(f"Total runtime: {self.statusManager.calculate_runtime()}")
-        logger.info("Inference process completed successfully.")
 
         self.statusManager.summary()
 
-        return updated_df
+        return updated_dfs
 
     # ===========================================================================
     # INFERENCE
@@ -156,6 +184,7 @@ class Inference:
         new_col = f"inference_{timestamp}_model_{self.trocr_model}"
 
         updated_df[new_col] = None
+        updated_df[new_col] = updated_df[new_col].astype("string").fillna("")
 
         updated_count = 0
         for filename, text in inferred_lines.items():

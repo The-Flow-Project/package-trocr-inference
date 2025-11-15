@@ -10,65 +10,177 @@ class TestInference(unittest.TestCase):
     def setUp(self):
         """Set up an Inference instance configured for a small HF dataset."""
         load_dotenv()
-        self.hf_repo_name = os.getenv("HUGGINGFACE_DOWNLOAD_REPO_NAME")
+        self.download_repo_name = os.getenv("HUGGINGFACE_DOWNLOAD_REPO_NAME")
         self.hf_token = os.getenv("HUGGINGFACE_TOKEN_READ")
-
+        self.write_token = os.getenv("HUGGINGFACE_TOKEN_READ_WRITE")
+        self.test_repo = os.getenv("HUGGINGFACE_TEST_UPLOAD_REPO_NAME")
 
         self.inference = Inference(
-            hf_repo_name=self.hf_repo_name,
-            hf_token=self.hf_token,
+            download_repo_name=self.download_repo_name,
+            hf_token=self.write_token,
             trocr_model="microsoft/trocr-small-handwritten",
             stop_on_fail=False,
+            push_to_hub=False
         )
 
     def test_perform_inference_returns_dataframe(self):
-        """Run the full inference pipeline and ensure it returns a valid DataFrame."""
+        """Run the full inference pipeline and ensure it returns a dict of DataFrames."""
         from flow_inference.data_handling import HuggingFaceDataHandler
 
-        # Temporarily limit dataset to 3 records for faster testing
-        original_convert = HuggingFaceDataHandler.convert_df_into_dict_list
-        HuggingFaceDataHandler.convert_df_into_dict_list = (
-            lambda self: original_convert(self)[:3]
-        )
+        # limit dataset to 3 per split
+        original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
+
+        def limited_convert(self, dfs):
+            full = original_convert(self, dfs)
+            return {split: recs[:3] for split, recs in full.items()}
+
+        HuggingFaceDataHandler.convert_to_list_of_dicts = limited_convert
 
         try:
-            result_df = self.inference.perform_inference()
+            result = self.inference.perform_inference()
         finally:
-            HuggingFaceDataHandler.convert_df_into_dict_list = original_convert
+            HuggingFaceDataHandler.convert_to_list_of_dicts = original_convert
 
-        # Check that a DataFrame is returned
-        self.assertIsInstance(result_df, pd.DataFrame, "Expected result to be a pandas DataFrame")
+        # must return a dict
+        self.assertIsInstance(result, dict, "Expected dict of DataFrames")
+        self.assertGreater(len(result), 0, "No splits returned")
 
-        # Check it has some data
-        self.assertFalse(result_df.empty, "Resulting DataFrame is empty")
+        for split, df in result.items():
+            with self.subTest(split=split):
 
-        # Check that at least one inference column was added
-        inference_cols = [col for col in result_df.columns if col.startswith("inference_")]
-        self.assertTrue(len(inference_cols) > 0, "No inference column found in DataFrame")
+                self.assertIsInstance(df, pd.DataFrame)
+                self.assertFalse(df.empty, "Returned DataFrame is empty")
 
-        # Check that the inference column has some non-null entries
-        inferred_values = result_df[inference_cols[0]].dropna()
-        self.assertTrue(len(inferred_values) > 0, "Inference column is empty")
+                inference_cols = [c for c in df.columns if c.startswith("inference_")]
+                self.assertGreater(len(inference_cols), 0, "No inference column found")
+                inference_col = inference_cols[0]
+
+                # ---------------------------------------------------------
+                # REQUESTED SPLITS → must contain at least one non-empty string
+                # ---------------------------------------------------------
+                if split in self.inference.requested_splits or split == "default":
+                    non_empty = df[inference_col][df[inference_col] != ""]
+                    self.assertGreater(
+                        non_empty.size,
+                        0,
+                        f"Inference column empty for requested split '{split}'"
+                    )
+
+                # ---------------------------------------------------------
+                # UNREQUESTED SPLITS → must contain ONLY empty strings
+                # ---------------------------------------------------------
+                else:
+                    unique_vals = set(df[inference_col].unique())
+                    self.assertEqual(
+                        unique_vals,
+                        {""},
+                        f"Non-requested split '{split}' should have only empty strings"
+                    )
 
     def test_run_inference_returns_dict(self):
         """Ensure run_inference() produces a dictionary of results."""
         from flow_inference.data_handling import HuggingFaceDataHandler
 
         handler = HuggingFaceDataHandler(
-            dataset_name=self.hf_repo_name,
-            huggingface_token=self.hf_token,
-            split="train"
+            dataset_name=self.download_repo_name,
+            huggingface_token=self.hf_token
         )
-        handler.download()
-        handler.to_dataframe()
-        records = handler.convert_df_into_dict_list()[:2]
+
+        handler.download_hf_dataset()
+        dfs = handler.to_dataframe()
+        records_dict = handler.convert_to_list_of_dicts(dfs)
+
+        # pick a split (train preferred)
+        if "train" in records_dict:
+            records = records_dict["train"][:2]
+        else:
+            records = next(iter(records_dict.values()))[:2]
 
         self.inference.statusManager.initialize_status(len(records))
 
         result_dict = self.inference.run_inference(records)
 
         self.assertIsInstance(result_dict, dict, "Expected inference result to be a dictionary")
-        self.assertTrue(len(result_dict) > 0, "Inference result dictionary is empty")
+        self.assertGreater(len(result_dict), 0, "Inference result dictionary is empty")
+
+    def test_full_inference_with_upload(self):
+        """
+        Full integration test:
+        - downloads dataset
+        - runs inference
+        - writes results back into dataframe
+        - pushes updated dataset to HF Hub
+        """
+
+        if not self.write_token or not self.test_repo:
+            self.skipTest("Missing WRITE token or upload repo name.")
+
+        from huggingface_hub import HfApi
+        api = HfApi()
+
+        # Ensure repo exists
+        api.create_repo(
+            repo_id=self.test_repo,
+            token=self.write_token,
+            exist_ok=True,
+            repo_type="dataset",
+            private=True,
+        )
+
+        # limit dataset size
+        from flow_inference.data_handling import HuggingFaceDataHandler
+        original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
+
+        def limited_convert(self, dfs):
+            full = original_convert(self, dfs)
+            return {split: recs[:3] for split, recs in full.items()}
+
+        HuggingFaceDataHandler.convert_to_list_of_dicts = limited_convert
+
+        try:
+            inference = Inference(
+                download_repo_name=self.download_repo_name,
+                hf_token=self.write_token,
+                trocr_model="microsoft/trocr-small-handwritten",
+                stop_on_fail=False,
+                push_to_hub=True,
+                upload_repo_name=self.test_repo
+            )
+
+            result = inference.perform_inference()
+
+        finally:
+            HuggingFaceDataHandler.convert_to_list_of_dicts = original_convert
+
+        # Verify inference output
+        self.assertIsInstance(result, dict)
+        self.assertGreater(len(result), 0)
+
+        # Verify all returned splits have inference columns
+        for split, df in result.items():
+            self.assertFalse(df.empty)
+            inference_cols = [c for c in df.columns if c.startswith("inference_")]
+            self.assertGreater(len(inference_cols), 0)
+
+        # ---- Verify upload to HF Hub ----
+
+        files = api.list_repo_files(
+            repo_id=self.test_repo,
+            repo_type="dataset",
+            token=self.write_token
+        )
+
+        files_lower = [f.lower() for f in files]
+
+        self.assertTrue(
+            any("train" in f for f in files_lower),
+            "Uploaded repo missing train split parquet"
+        )
+
+        self.assertTrue(
+            any("parquet" in f for f in files_lower),
+            "No parquet files uploaded"
+        )
 
 
 if __name__ == "__main__":

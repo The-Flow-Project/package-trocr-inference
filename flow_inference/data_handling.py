@@ -2,7 +2,7 @@
 # IMPORT STATEMENTS
 # ===============================================================================
 from typing import List, Dict
-from datasets import load_dataset, Split
+from datasets import load_dataset, Split, Dataset, DatasetDict
 import pandas as pd
 from datasets.exceptions import *
 from flow_inference.utils.logging.inference_logger import logger
@@ -29,31 +29,34 @@ class HuggingFaceDataHandler:
         self.dataset_name = dataset_name
         self.huggingface_token = huggingface_token
         self.split = split
-        self.dataset: Optional[pd.DataFrame] = None
-        self.df: Optional[pd.DataFrame] = None
+        self.dataset: Optional[Dict[str, Dataset]] = None
+        self.df: Optional[Dict[str, pd.DataFrame]] = None
         self.state: str = 'initialized'
 
     # ---------------------------------------------------------------------------
     # DOWNLOAD DATASETS
     # ---------------------------------------------------------------------------
-    def download(self) -> None:
+    def download_hf_dataset(self) -> None:
         """
         Download the dataset from Hugging Face Hub using the Datasets library.
         """
+        logger.info(f"Downloading all splits for dataset: {self.dataset_name}")
+
         try:
-            logger.info(f"Downloading dataset: {self.dataset_name} (split={self.split})")
+            hf_dataset = load_dataset(self.dataset_name, token=self.huggingface_token)
 
-            if self.split:
-                # dataset has explicit split
-                self.dataset = load_dataset(
-                    self.dataset_name, split=self.split, token=self.huggingface_token
-                )
+            # Case 1 — dataset has splits
+            if isinstance(hf_dataset, DatasetDict):
+                self.dataset = dict(hf_dataset)
+                self.state = "downloaded_all"
+
+            # Case 2 — dataset has no splits
             else:
-                # load full dataset (no split argument)
-                self.dataset = load_dataset(self.dataset_name, token=self.huggingface_token)
+                self.dataset = {"default": hf_dataset}
+                self.state = "downloaded_default"
 
-            self.state = "downloaded"
-            logger.info(f"Successfully loaded dataset: {self.dataset_name}")
+            logger.info(f"Successfully loaded dataset with splits: {list(self.dataset.keys())}")
+
         except DatasetNotFoundError as e:
             self.state = "failed"
             logger.error(f"Dataset not found: '{self.dataset_name}'. Check spelling or visibility/access rights.")
@@ -74,7 +77,7 @@ class HuggingFaceDataHandler:
     # ---------------------------------------------------------------------------
     # CONVERSION
     # ---------------------------------------------------------------------------
-    def to_dataframe(self) -> pd.DataFrame:
+    def to_dataframe(self) -> Dict[str, pd.DataFrame]:
         """
         Convert the loaded dataset to a pandas DataFrame.
         """
@@ -82,13 +85,15 @@ class HuggingFaceDataHandler:
             logger.error("Dataset not loaded. Call download() first.")
             raise RuntimeError("Dataset not loaded. Call download() first.")
 
-        logger.info("Converting Hugging Face dataset to pandas DataFrame...")
-        self.df = self.dataset.to_pandas()
+        dfs = {}
+        for split_name, split_data in self.dataset.items():
+            logger.info(f"Converting split '{split_name}' to DataFrame...")
+            dfs[split_name] = split_data.to_pandas()
         self.state = 'converted'
         logger.info("Dataset converted to DataFrame successfully.")
-        return self.df
+        return dfs
 
-    def convert_df_into_dict_list(self) -> List[Dict[str, object]]:
+    def convert_to_list_of_dicts(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, List[Dict]]:
         """
         Convert the loaded Hugging Face dataset (self.df) into a list of dictionaries.
 
@@ -96,14 +101,66 @@ class HuggingFaceDataHandler:
         - Does not modify or interpret any values (no image conversions).
         - Works for any dataset schema.
         """
+        """
+        Convert all DataFrames into list-of-dicts.
+        """
+        recs: Dict[str, List[Dict]] = {}
+        for split_name, df in dfs.items():
+            logger.info(f"Converting DataFrame for split '{split_name}' into list of dicts...")
+            recs[split_name] = df.to_dict(orient="records")
+        return recs
+
+    def convert_df_into_hf_dataset(self) -> Dataset:
+        """
+        Convert the internal pandas DataFrame (self.df) back into a Hugging Face Dataset.
+        """
         if self.df is None:
-            self.to_dataframe()
+            logger.error("No DataFrame found. Cannot convert to Hugging Face Dataset.")
+            raise RuntimeError("DataFrame not available. Please generate or load it first.")
 
-        logger.info("Converting DataFrame rows into dictionaries...")
-        records = [row.to_dict() for _, row in self.df.iterrows()]
+        logger.info("Converting pandas DataFrame back to Hugging Face Dataset...")
+        only_df = next(iter(self.df.values()))
+        hf_dataset = Dataset.from_pandas(only_df)
+        logger.info("Conversion successful.")
+        return hf_dataset
 
-        logger.info(f"Converted {len(records)} records with {len(self.df.columns)} columns.")
-        self.state = "ready"
-        return records
+    # ---------------------------------------------------------------------------
+    # PUSH UPDATED DATASET TO HUGGING FACE HUB
+    # ---------------------------------------------------------------------------
+    def push_to_hub(
+            self,
+            upload_repo_name: str,
+            private: bool = True,
+            commit_message: str = "Upload updated dataset"
+    ):
+        """
+        Upload the entire dataset (with all its splits) as a single dataset.
+        This produces the correct HF Hub layout with:
+          - data/train-*
+          - data/test-*
+          - dataset_infos.json
+        """
+
+        if self.dataset is None:
+            raise RuntimeError("Dataset not loaded.")
+
+        if self.df is None:
+            raise RuntimeError("No DataFrames stored. Cannot push to hub.")
+
+        # Build a DatasetDict
+        ds_dict = DatasetDict()
+        for split_name, df in self.df.items():
+            ds_dict[split_name] = Dataset.from_pandas(df)
+
+        # Now push the DatasetDict as a single dataset
+        ds_dict.push_to_hub(
+            repo_id=upload_repo_name,
+            token=self.huggingface_token,
+            private=private,
+            commit_message=commit_message,
+        )
+
+        logger.info(f"Uploaded dataset with splits to HF Hub: {upload_repo_name}")
+        self.state = "pushed"
 
 

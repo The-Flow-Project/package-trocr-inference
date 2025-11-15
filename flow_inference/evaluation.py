@@ -94,7 +94,7 @@ class Evaluation:
         """
         inference = Inference(
             process_id=self.process_id,
-            hf_repo_name=self.repo_name,
+            download_repo_name=self.repo_name,
             hf_token=self.github_access_token,
             directory=self.directory
         )
