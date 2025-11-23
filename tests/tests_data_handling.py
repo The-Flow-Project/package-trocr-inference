@@ -142,18 +142,53 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             private=True,
             exist_ok=True,
             token=self.write_token,
+            repo_type="dataset"
         )
 
         # Multi-split DataFrames
-        df_train = pd.DataFrame({"filename": ["a"], "text": ["hello"]})
-        df_test = pd.DataFrame({"filename": ["c"], "text": ["test"]})
+        df_train = pd.DataFrame({
+            "filename": ["1558462_0018_59382975.jpg"] * 5,
+            "line_id": [
+                "eSc_line_e7d167e5",
+                "eSc_line_924ca7d5",
+                "eSc_line_230d9887",
+                "eSc_line_7478ed60",
+                "eSc_line_848f17da",
+            ],
+            "inference_20250213": [
+                "Dummy text 1",
+                "Dummy text 2",
+                "Dummy text 3",
+                "Dummy text 4",
+                "Dummy text 5",
+            ],
+            "project": ["export_doc32_tna_cp_21_1_3_1_12gt_pagexml_202508141209"] * 5
+        })
+
+        df_test = pd.DataFrame({
+            "filename": ["1558462_0019_59382976.jpg"] * 5,
+            "line_id": [
+                "eSc_line_bd13f6ed",
+                "eSc_line_b8e32050",
+                "eSc_line_e3d50dee",
+                "eSc_line_d1202028",
+                "eSc_line_844619e5",
+            ],
+            "inference_20250213": [
+                "Dummy test text 1",
+                "Dummy test text 2",
+                "Dummy test text 3",
+                "Dummy test text 4",
+                "Dummy test text 5",
+            ],
+            "project": ["export_doc32_tna_cp_21_1_3_1_12gt_pagexml_202508141209"] * 5
+        })
 
         handler = HuggingFaceDataHandler(
             dataset_name=self.test_repo,
             huggingface_token=self.write_token,
         )
 
-        # REQUIRED: dataset must be a DatasetDict now
         handler.dataset = DatasetDict({
             "train": Dataset.from_pandas(df_train),
             "test": Dataset.from_pandas(df_test),
