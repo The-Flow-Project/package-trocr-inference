@@ -1,3 +1,6 @@
+import datetime
+
+import pandas as pd
 from datasets import load_dataset, Dataset
 from huggingface_hub import HfApi
 from huggingface_hub.errors import HfHubHTTPError
@@ -90,6 +93,9 @@ class InferenceToRawXMLWriter:
 
     def update_raw_xml_dataset(self, lookup: dict):
         df = self.raw_dataset.to_pandas()
+        new_col = f"inference_xml_{pd.Timestamp.now().strftime('%Y%m%d')}"
+        df[new_col] = ""
+
         updated = 0
 
         for idx, row in df.iterrows():
@@ -101,7 +107,9 @@ class InferenceToRawXMLWriter:
 
             xp = XMLProcessor.from_string(raw_xml)
             xp.insert_inferred_lines(xp.root, lookup[filename])
-            df.at[idx, "xml"] = xp.tree_to_string()
+            updated_xml = xp.tree_to_string()
+
+            df.at[idx, new_col] = updated_xml
             updated += 1
 
         print(f"Updated {updated} XML records.")
