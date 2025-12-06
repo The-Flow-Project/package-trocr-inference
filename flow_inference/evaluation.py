@@ -1,255 +1,167 @@
 import json
-import os
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Dict
+import pandas as pd
 from evaluate import load
 from flow_inference.data_handling import HuggingFaceDataHandler
-from flow_inference.inference import Inference
+from flow_inference.status import Status
 from flow_inference.utils.logging.inference_logger import logger
-from flow_inference.xml_processing import XMLProcessor
 
 
 class Evaluation:
-    def __init__(self,
-                 process_id,
-                 repo_name: str,
-                 model_name: str,
-                 hf_url: str,
-                 github_access_token: Optional[str],
-                 directory: str = "data"):
-        self.process_id = process_id
-        self.repo_name = repo_name
-        self.repo_folder = "xml"
-        self.github_access_token = github_access_token
-        self.modified_repo_name = repo_name.replace("/", "___")
-        self.directory = directory
-        self.repo_base_path = os.path.join(self.directory, self.modified_repo_name)
-        self.in_path = os.path.join(self.repo_base_path, "fetched")
-        self.out_path = os.path.join(self.repo_base_path, "evaluation_results")
-        self.model_name = model_name
-        self.hf_url = hf_url
-        os.makedirs(self.out_path, exist_ok=True)
+    def __init__(
+        self,
+        download_repo_name: str,
+        hf_token: Optional[str],
+        splits: Optional[List[str]] = None,
+    ):
+        self.download_repo_name = download_repo_name
+        self.hf_token = hf_token
+        self.splits = splits
+        self.statusManager = Status()
 
-        # initialise DataHandler
-        # self.data_handler = DataHandler(download_path=self.in_path, upload_path=self.out_path)
-
-    # TODO: perform line segmentation if XML not segmented yet
-    @staticmethod
-    def perform_line_segmentation():
-        """ Placeholder for future line segmentation logic. """
-        print("Performing line segmentation (not implemented yet).")
-
-    def _fetch_xml_files(self) -> List[str]:
-        """
-        Fetch XML files from GitHub.
-
-        :return: List of fetched files.
-        """
-        logger.debug("Fetching XML files...")
-        fetched_files, failed_files = self.data_handler.fetch_xml_files_from_github(
-            repo_name=self.repo_name,
-            folder_path=self.repo_folder,
-            download_path=self.in_path
+        self.data_handler = HuggingFaceDataHandler(
+            dataset_name=download_repo_name,
+            huggingface_token=hf_token
         )
 
-        if not fetched_files:
-            logger.error("No XML files fetched. Exiting evaluation.")
-            return []
+    # --------------------------------------------------------------------------
+    # LOAD DATA
+    # --------------------------------------------------------------------------
+    def load_dataset(self) -> Dict[str, pd.DataFrame]:
+        """Download dataset and convert to DataFrames."""
+        self.data_handler.download_hf_dataset()
+        dfs = self.data_handler.to_dataframe()
+        return dfs
 
-        logger.info(f"Successfully fetched {len(fetched_files)} XML files.")
-        return fetched_files
+    def select_splits(self, dfs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Select splits."""
+        # requested splits
+        if self.splits:
+            chosen = []
+            for split in self.splits:
+                if split not in dfs:
+                    raise ValueError(f"Requested split '{split}' does not exist.")
+                chosen.append(dfs[split])
+            return pd.concat(chosen, ignore_index=True)
 
-    def _process_ground_truth(self, fetched_files: List[str]) -> List[str]:
-        """
-        Extracts ground truth text from XML files and performs segmentation if necessary.
+        # Default behavior: prefer 'test' over 'train'
+        if "test" in dfs:
+            return dfs["test"]
+        if "train" in dfs:
+            return dfs["train"]
 
-        :param fetched_files: List of XML file paths.
-        :return: List of extracted ground truth lines.
-        """
-        gt_lines = []
+        # If a dataset does not contain either train or test splits
+        raise RuntimeError("Dataset has neither 'train' nor 'test' split.")
 
-        for fetched_file in fetched_files:
-            xml_processor = XMLProcessor(fetched_file)
-            extracted_texts = xml_processor.extract_all_text_lines()
+    # --------------------------------------------------------------------------
+    # GROUND TRUTH EXTRACTION
+    # --------------------------------------------------------------------------
+    def _extract_ground_truth(self, df: pd.DataFrame) -> List[str]:
+        if "text" not in df:
+            raise ValueError("Dataset has no 'text' column for GT.")
+        return df["text"].fillna("").astype(str).tolist()
 
-            if extracted_texts:
-                gt_lines.extend(extracted_texts)
-            else:
-                text_lines_exist = bool(xml_processor.root.findall(f".//{xml_processor.xmlns}TextLine"))
+    # --------------------------------------------------------------------------
+    # INFERENCE COLUMN SELECTION
+    # --------------------------------------------------------------------------
+    def _find_latest_inference_column(self, df: pd.DataFrame) -> str:
+        cols = [col for col in df.columns if col.startswith("inference_")]
+        if not cols:
+            raise ValueError("No inference column found.")
 
-                if not text_lines_exist:
-                    self.perform_line_segmentation()  # Your existing segmentation placeholder
+        # Extract timestamp from each column
+        timestamps = []
+        for col in cols:
+            parts = col.split("_", 2)
+            ts = parts[1] if len(parts) > 1 else ""
+            timestamps.append((ts, col))
 
-        if not gt_lines:
-            logger.error("No ground truth text extracted. Exiting evaluation.")
-            return []
+        # Pick column with max timestamp
+        latest_timestamp, latest_col = max(timestamps, key=lambda x: x[0])
 
-        return gt_lines
+        logger.info(f"Using latest inference column: {latest_col}")
+        return latest_col
 
-    async def _perform_inference(self) -> List[str]:
-        """
-        Run model inference.
+    def _extract_hypothesis(self, df: pd.DataFrame, column: str) -> List[str]:
+        if column not in df.columns:
+            raise ValueError(f"Hypothesis column '{column}' not found.")
+        return df[column].fillna("").astype(str).tolist()
 
-        :return: List of inferred lines.
-        """
-        inference = Inference(
-            process_id=self.process_id,
-            download_repo_name=self.repo_name,
-            hf_token=self.github_access_token,
-            directory=self.directory
-        )
+    # --------------------------------------------------------------------------
+    # CER CALCULATION
+    # --------------------------------------------------------------------------
+    def compute_cer(self, gt: List[str], hyp: List[str]) -> float:
+        cer = load("cer")
+        cer.add_batch(predictions=hyp, references=gt)
+        return cer.compute()
 
-        inferred_lines_dict = await inference.perform_inference()
+    # --------------------------------------------------------------------------
+    # OUTPUT CREATION
+    # --------------------------------------------------------------------------
+    def create_output_files(
+        self,
+        groundtruth: List[str],
+        hypothesis: List[str],
+        cer_score: float
+    ) -> Dict[str, bytes]:
 
-        if not inferred_lines_dict:
-            logger.error("Inference failed or produced no results. Exiting evaluation.")
-            return []
-
-        return list(inferred_lines_dict.values())
-
-    @staticmethod
-    def _compute_cer(gt_lines: List[str], inferred_lines: List[str]) -> float:
-        """
-        Compute the Character Error Rate (CER) given ground truth and inferred text.
-
-        :param gt_lines: List of ground truth text lines.
-        :param inferred_lines: List of inferred text lines.
-        :return: Computed CER score.
-        """
-        if len(gt_lines) != len(inferred_lines):
-            logger.warning("Mismatch between number of inferred lines and ground truth lines.")
-
-        cer_metric = load('cer')
-        cer_metric.add_batch(predictions=inferred_lines, references=gt_lines)
-        cer_score = cer_metric.compute()
-
-        logger.info(f"Computed CER: {cer_score}")
-        return cer_score
-
-    def _save_results(self, gt_lines: List[str], inferred_lines: List[str]) -> Tuple[str, str]:
-        """
-        Save the ground truth and hypothesis text files locally.
-
-        :param gt_lines: List of ground truth text lines.
-        :param inferred_lines: List of inferred text lines.
-        :return: Tuple (gt_file, hypothesis_file) containing the file paths.
-        """
-        gt_file = os.path.join(self.out_path, "gt.txt")
-        hypothesis_file = os.path.join(self.out_path, "hypothesis.txt")
-
-        self.write_lines_to_file(gt_lines, gt_file)
-        self.write_lines_to_file(inferred_lines, hypothesis_file)
-
-        logger.info(f"Saved ground truth and hypothesis files to {self.out_path}")
-        return gt_file, hypothesis_file
-
-    @staticmethod
-    def write_lines_to_file(lines: List[str], file_path: str) -> None:
-        """
-        Writes a list of strings to a text file, each string on a new line.
-
-        :param lines: The list of strings to write.
-        :param file_path: The path to the output text file.
-
-        :return: None
-        """
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines) + '\n')
-
-    @staticmethod
-    def count_lines(file_path: str) -> int:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return sum(1 for _ in f)
-
-    def _generate_evaluation_report(self,
-                                    model_name,
-                                    hf_url,
-                                    gt_file: str,
-                                    hypothesis_file: str,
-                                    cer_score: float) -> str:
-        """
-        Generate an evaluation report using your existing logic and save it locally.
-
-        :param gt_file: File path of the ground truth text.
-        :param hypothesis_file: File path of the hypothesis text.
-        :param cer_score: Computed CER score.
-        :return: The saved evaluation report.
-        """
         report = {
-            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "model_name": model_name,
-            "hf_url": hf_url,
-            "num_lines_hypothesis": self.count_lines(hypothesis_file),
-            "num_lines_gt": self.count_lines(gt_file),
-            "cer_score": cer_score
+            "timestamp": datetime.now().isoformat(),
+            "repo_name": self.download_repo_name,
+            "gt_lines": len(groundtruth),
+            "hypothesis_lines": len(hypothesis),
+            "cer": cer_score,
         }
 
-        report_file = os.path.join(self.out_path, "evaluation_report.json")
-        with open(report_file, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=4)
+        return {
+            "gt.txt": "\n".join(groundtruth).encode("utf-8"),
+            "hypothesis.txt": "\n".join(hypothesis).encode("utf-8"),
+            "evaluation_report.json": json.dumps(report, indent=4).encode("utf-8"),
+        }
 
-        logger.info(f"Evaluation report saved: {report_file}")
-        return report_file
+    # --------------------------------------------------------------------------
+    # UPLOAD FILES
+    # --------------------------------------------------------------------------
+    def upload_results(self, files: Dict[str, bytes]) -> None:
+        for fname, content in files.items():
+            self.data_handler.upload_file(
+                repo_name=self.download_repo_name,
+                target_path=f"evaluation/{fname}",
+                content_bytes=content
+            )
 
-    def _push_saved_results(self, gt_file: str, hypothesis_file: str, report_file: str):
-        """
-        Push the evaluation result files to GitHub using known file paths.
+    # --------------------------------------------------------------------------
+    # MAIN EVALUATION PIPELINE
+    # --------------------------------------------------------------------------
+    def perform_evaluation(self) -> Dict[str, bytes]:
+        logger.info(f"Starting evaluation for repo: {self.download_repo_name}")
 
-        :param gt_file: Path to the saved ground truth file.
-        :param hypothesis_file: Path to the saved hypothesis file.
-        :param report_file: Path to the saved evaluation report.
-        """
-        result_files = [gt_file, hypothesis_file, report_file]
-        try:
-            logger.info(f"Pushing {len(result_files)} evaluation result files to GitHub...")
-            self.data_handler.push_xml_files_to_github(self.repo_name, result_files)
-            logger.info("Successfully pushed evaluation results to GitHub.")
-        except Exception as e:
-            logger.error(f"Failed to push evaluation results to GitHub: {e}")
+        # 1) Load dataset
+        dfs = self.load_dataset()
 
-    async def perform_evaluation(self):
-        """
-        Perform the evaluation process:
-        - Fetch XML files
-        - Extract ground truth text
-        - Run inference
-        - Compute Character Error Rate (CER)
-        - Save results
-        - Generate and save evaluation report
-        - Push results to GitHub repository
-        """
-        logger.info(f"Starting evaluation for repository {self.repo_name}")
+        # 2) Select split(s)
+        df = self.select_splits(dfs)
 
-        # Step 1: Fetch XML files
-        fetched_files = self._fetch_xml_files()
-        if not fetched_files:
-            return
-        logger.info(f"Successfully fetched {len(fetched_files)} XML files.")
+        # 3) Extract ground truth
+        groundtruth = self._extract_ground_truth(df)
 
-        # Step 2: Extract ground truth text from XML files
-        gt_lines = self._process_ground_truth(fetched_files)
-        if not gt_lines:
-            return
+        # 4) Find inference column
+        inference_col = self._find_latest_inference_column(df)
 
-        # Step 3: Perform inference
-        inferred_lines = await self._perform_inference()
-        if not inferred_lines:
-            return
+        # 5) Extract hypothesis
+        hypothesis = self._extract_hypothesis(df, inference_col)
 
-        # Step 4: Compute CER
-        cer_score = self._compute_cer(gt_lines, inferred_lines)
+        # 6) Calculate CER
+        cer_score = self.compute_cer(groundtruth, hypothesis)
+        logger.info(f"CER = {cer_score}")
 
-        # Step 5: Save ground truth and hypothesis files locally
-        gt_file, hypothesis_file = self._save_results(gt_lines, inferred_lines)
+        # 7) Build output files (in memory)
+        files = self.create_output_files(groundtruth, hypothesis, cer_score)
 
-        # Step 6: Generate and save evaluation report
-        report_file = self._generate_evaluation_report(model_name=self.model_name,
-                                                       hf_url=self.hf_url,
-                                                       gt_file=gt_file,
-                                                       hypothesis_file=hypothesis_file,
-                                                       cer_score=cer_score)
+        # 8) Upload results
+        self.upload_results(files)
 
-        # Step 7: Push results to GitHub
-        self._push_saved_results(gt_file, hypothesis_file, report_file)
+        logger.info("Completed and uploaded evaluation results.")
 
-        logger.info("Evaluation process completed.")
+        return files

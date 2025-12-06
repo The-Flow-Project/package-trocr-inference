@@ -43,7 +43,9 @@ class HuggingFaceDataHandler:
         logger.info(f"Downloading all splits for dataset: {self.dataset_name}")
 
         try:
-            hf_dataset = load_dataset(self.dataset_name, token=self.huggingface_token)
+            hf_dataset = load_dataset(self.dataset_name,
+                                      token=self.huggingface_token,
+                                      data_dir="data")
 
             # Case 1 — dataset has splits
             if isinstance(hf_dataset, DatasetDict):
@@ -162,5 +164,16 @@ class HuggingFaceDataHandler:
 
         logger.info(f"Uploaded dataset with splits to HF Hub: {upload_repo_name}")
         self.state = "pushed"
+
+    def upload_file(self, repo_name: str, target_path: str, content_bytes: bytes):
+        from huggingface_hub import HfApi
+        api = HfApi()
+        api.upload_file(
+            path_or_fileobj=content_bytes,
+            path_in_repo=target_path,
+            repo_id=repo_name,
+            repo_type="dataset",
+            token=self.huggingface_token,
+        )
 
 
