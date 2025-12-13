@@ -111,11 +111,16 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         updated_df = self.writer.update_raw_xml_dataset(lookup)
 
-        self.assertIn("HELLO", updated_df.iloc[0]["xml"])
-        self.assertIn("WORLD", updated_df.iloc[1]["xml"])
+        inference_cols = [c for c in updated_df.columns if c.startswith("inference_xml_")]
+        self.assertEqual(len(inference_cols), 1)
 
-        self.assertIn("<TextEquiv>", updated_df.iloc[0]["xml"])
-        self.assertIn("<Unicode>", updated_df.iloc[0]["xml"])
+        col = inference_cols[0]
+
+        self.assertIn("HELLO", updated_df.iloc[0][col])
+        self.assertIn("WORLD", updated_df.iloc[1][col])
+
+        self.assertIn("<TextEquiv>", updated_df.iloc[0][col])
+        self.assertIn("<Unicode>", updated_df.iloc[0][col])
 
     # -----------------------
     # Test: upload_updated_dataset

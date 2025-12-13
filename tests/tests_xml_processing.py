@@ -1,7 +1,5 @@
 import unittest
 import xml.etree.ElementTree as ET
-import os
-
 from flow_inference.xml_processing import XMLProcessor
 
 

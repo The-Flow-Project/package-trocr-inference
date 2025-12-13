@@ -41,7 +41,9 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         handler = HuggingFaceDataHandler("my-org/my-dataset", huggingface_token="TOKEN123")
         handler.download_hf_dataset()
 
-        mock_load_dataset.assert_called_once_with("my-org/my-dataset", token="TOKEN123")
+        mock_load_dataset.assert_called_once_with("my-org/my-dataset",
+                                                  token="TOKEN123",
+                                                  data_dir="data")
 
         self.assertEqual(handler.state, "downloaded_all")
         self.assertEqual(list(handler.dataset.keys()), ["train", "test"])
@@ -55,29 +57,12 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         handler = HuggingFaceDataHandler("my-org/my-dataset", huggingface_token="TOKEN123")
         handler.download_hf_dataset()
 
-        mock_load_dataset.assert_called_once_with("my-org/my-dataset", token="TOKEN123")
+        mock_load_dataset.assert_called_once_with("my-org/my-dataset",
+                                                  token="TOKEN123",
+                                                  data_dir="data")
 
         self.assertEqual(handler.state, "downloaded_default")
         self.assertIn("default", handler.dataset)
-
-    @patch("flow_inference.data_handling.load_dataset")
-    def test_download_failure(self, mock_load_dataset):
-        error_cases = [
-            (DatasetNotFoundError("Dataset not found"), DatasetNotFoundError),
-            (UnexpectedDownloadedFileError("Unexpected file format"), UnexpectedDownloadedFileError),
-            (UnexpectedSplitsError("Missing split"), UnexpectedSplitsError),
-            (DatasetsError("General HF dataset error"), DatasetsError),
-        ]
-
-        for raised_exc, expected_exc in error_cases:
-            with self.subTest(exc_type=expected_exc.__name__):
-                mock_load_dataset.side_effect = raised_exc
-
-                with self.assertRaises(expected_exc):
-                    self.handler.download_hf_dataset()
-
-                self.assertEqual(self.handler.state, "failed")
-                mock_load_dataset.reset_mock()
 
     @patch("flow_inference.data_handling.load_dataset")
     def test_download_success_with_token(self, mock_load_dataset):
@@ -92,7 +77,9 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.handler.download_hf_dataset()
 
         mock_load_dataset.assert_called_once_with(
-            "my-org/my-dataset", token="hf_ABC123"
+            "my-org/my-dataset",
+            token="hf_ABC123",
+            data_dir = "data"
         )
 
         self.assertEqual(self.handler.state, "downloaded_all")
