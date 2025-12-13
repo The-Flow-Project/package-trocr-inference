@@ -5,8 +5,6 @@ import xml.etree.ElementTree as et
 from typing import Dict
 import io
 
-from flow_inference.utils.logging.inference_logger import logger
-
 
 # ===============================================================================
 # CLASS

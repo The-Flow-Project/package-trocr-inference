@@ -3,7 +3,7 @@
 # ===============================================================================
 from typing import Union
 import torch
-from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel, AutoProcessor
+from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel
 from flow_inference.utils.logging.inference_logger import logger
 
 
