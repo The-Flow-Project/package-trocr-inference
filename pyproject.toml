@@ -67,3 +67,6 @@ Repository = "https://github.com/The-Flow-Project/package-trocr-inference"
 
 [tool.setuptools.packages]
 find = { include = ["flow_inference*"] }
+
+[tool.setuptools.package-data]
+flow_inference = ["utils/logging/*.yaml"]
