@@ -208,7 +208,7 @@ class Inference:
         logger.info(f"Created column '{new_col}' and updated {updated_count} rows.")
         return updated_df
 
-    def save_results(self, inferred_lines: Dict[str, str], original_df: pd.DataFrame) -> pd.DataFrame:
+    def save_results(self, inferred_lines: Dict[tuple[str, str], str], original_df: pd.DataFrame) -> pd.DataFrame:
         """
         Save inference results: add new column + update raw XML strings.
         Returns the updated DataFrame.
