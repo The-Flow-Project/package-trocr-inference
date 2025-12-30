@@ -55,20 +55,26 @@ class TestInference(unittest.TestCase):
                 self.assertGreater(len(inference_cols), 0, "No inference column found")
                 inference_col = inference_cols[0]
 
-                # ---------------------------------------------------------
-                # REQUESTED SPLITS → must contain at least one non-empty string
-                # ---------------------------------------------------------
                 if split in self.inference.requested_splits or split == "default":
-                    non_empty = df[inference_col][df[inference_col] != ""]
+                    inferred = df[df[inference_col] != ""]
+
+                    # at least one inferred line
                     self.assertGreater(
-                        non_empty.size,
+                        len(inferred),
                         0,
-                        f"Inference column empty for requested split '{split}'"
+                        f"No inference results written for split '{split}'"
                     )
 
-                # ---------------------------------------------------------
-                # UNREQUESTED SPLITS → must contain ONLY empty strings
-                # ---------------------------------------------------------
+                    # ensure no conflicting inference per (filename, line_id)
+                    for (filename, line_id), group in inferred.groupby(["filename", "line_id"]):
+                        unique_vals = group[inference_col].unique()
+                        self.assertEqual(
+                            len(unique_vals),
+                            1,
+                            f"Multiple inference values for ({filename}, {line_id}) in split '{split}'"
+                        )
+
+                # non-requested split: must contain ONLY empty strings
                 else:
                     unique_vals = set(df[inference_col].unique())
                     self.assertEqual(
@@ -102,6 +108,22 @@ class TestInference(unittest.TestCase):
 
         self.assertIsInstance(result_dict, dict, "Expected inference result to be a dictionary")
         self.assertGreater(len(result_dict), 0, "Inference result dictionary is empty")
+        for key, value in result_dict.items():
+            self.assertIsInstance(key, tuple)
+            self.assertEqual(len(key), 2)
+
+            filename, line_id = key
+
+            self.assertIsInstance(filename, str)
+            self.assertIsInstance(line_id, str)
+            self.assertIsInstance(value, str)
+
+            valid_keys = {(r["filename"], r["line_id"]) for r in records}
+            self.assertIn(
+                (filename, line_id),
+                valid_keys,
+                "Inference result key is not a (filename, line_id) pair from input records"
+            )
 
     def test_full_inference_with_upload(self):
         """
@@ -158,12 +180,46 @@ class TestInference(unittest.TestCase):
 
         # Verify all returned splits have inference columns
         for split, df in result.items():
-            self.assertFalse(df.empty)
-            inference_cols = [c for c in df.columns if c.startswith("inference_")]
-            self.assertGreater(len(inference_cols), 0)
+            with self.subTest(split=split):
 
-        # ---- Verify upload to HF Hub ----
+                self.assertFalse(df.empty)
 
+                inference_cols = [c for c in df.columns if c.startswith("inference_")]
+                self.assertGreater(len(inference_cols), 0)
+
+                inference_col = inference_cols[0]
+
+                # line-level correctness checks
+                if "line_id" in df.columns:
+                    inferred = df[df[inference_col] != ""]
+
+                    # Requested splits: must contain inference
+                    if split in inference.requested_splits or split == "default":
+
+                        self.assertGreater(
+                            len(inferred),
+                            0,
+                            f"No inference results written for requested split '{split}'"
+                        )
+
+                        # One unique inference value per line_id
+                        for (filename, line_id), group in inferred.groupby(["filename", "line_id"]):
+                            unique_vals = group[inference_col].unique()
+                            self.assertEqual(
+                                len(unique_vals),
+                                1,
+                                f"Multiple inference values found for ({filename}, {line_id}) in split '{split}'"
+                            )
+
+                    # Unrequested splits: must contain ONLY empty strings
+                    else:
+                        self.assertEqual(
+                            len(inferred),
+                            0,
+                            f"Unrequested split '{split}' should not contain inference results"
+                        )
+
+        # Verify upload to HF Hub
         files = api.list_repo_files(
             repo_id=self.test_repo,
             repo_type="dataset",

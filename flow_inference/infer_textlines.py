@@ -41,13 +41,16 @@ class InferenceHandler:
         try:
             pixel_values = [item['pixel_values'] for item in batch]
             filenames = [item['filename'] for item in batch]
+            line_ids = [item['line_id'] for item in batch]
         except KeyError as e:
             raise KeyError(f"Missing expected key in batch item: {e}")
 
         # stack action
         pixel_values = torch.stack(pixel_values)
 
-        return {'pixel_values': pixel_values, 'filenames': filenames}
+        return {'pixel_values': pixel_values,
+                'filenames': filenames,
+                'line_ids': line_ids}
 
     @staticmethod
     def run_batch_inference(inference_dataloader: DataLoader,
@@ -89,8 +92,12 @@ class InferenceHandler:
                 logger.error(f"Error decoding predictions: {e}")
                 raise ValueError(f"Error decoding predictions: {e}")
 
-            file_names = batch['filenames']
-            line = [f'{os.path.basename(file_name)}\t{pred}' for file_name, pred in zip(file_names, pred_str)]
+            line_ids = batch["line_ids"]
+            filenames = batch["filenames"]
+            line = [
+                f'{filename}\t{line_id}\t{pred}'
+                for filename, line_id, pred in zip(filenames, line_ids, pred_str)
+            ]
             inferred_txt.extend(line)
 
         logger.info(f"Batch inference completed. Total lines processed: {len(inferred_txt)}")

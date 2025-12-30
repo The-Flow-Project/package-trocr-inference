@@ -21,7 +21,7 @@ class TestInferenceHandler(unittest.TestCase):
         if not hf_token or not hf_repo_name:
             self.skipTest("Missing Hugging Face token or repo name in .env")
 
-        # STEP 1: Load dataset from Hugging Face (now supports multiple splits)
+        # STEP 1: Load dataset from Hugging Face
         handler = HuggingFaceDataHandler(
             dataset_name=hf_repo_name,
             huggingface_token=hf_token,
@@ -42,8 +42,8 @@ class TestInferenceHandler(unittest.TestCase):
 
         # take 2 samples for speed
         self.records = all_records[:2]
+        assert "line_id" in self.records[0], "Test records must include line_id"
 
-        # unwrap Hugging Face image dicts if needed
         image_obj = self.records[0].get("image")
         if isinstance(image_obj, dict) and "bytes" in image_obj:
             for r in self.records:
@@ -63,6 +63,23 @@ class TestInferenceHandler(unittest.TestCase):
 
         # mock model.generate to skip real inference
         self.handler.model.generate = lambda x, **_: torch.zeros((x.size(0), 5), dtype=torch.long)
+
+    def test_collate_fn_includes_line_ids(self):
+        inference_dataset = TrOCRInferenceDataset(self.records, self.image_handler)
+        dataloader = DataLoader(
+            inference_dataset,
+            collate_fn=self.handler.custom_collate_fn,
+            batch_size=2,
+            shuffle=False,
+        )
+
+        batch = next(iter(dataloader))
+
+        self.assertIn("pixel_values", batch)
+        self.assertIn("filenames", batch)
+        self.assertIn("line_ids", batch)
+
+        self.assertEqual(len(batch["line_ids"]), len(self.records))
 
     def test_inference(self):
         """Run inference on a small batch of in-memory HF records and validate structure."""
@@ -94,9 +111,20 @@ class TestInferenceHandler(unittest.TestCase):
         for prediction in predictions:
             self.assertIsInstance(prediction, str, "Expected each prediction to be a string")
             self.assertIn("\t", prediction, "Prediction format is incorrect: missing tab separator")
-            file_name, pred_text = prediction.split("\t", 1)
-            self.assertIsInstance(file_name, str, "Expected file name to be a string")
+
+            filename, line_id, pred_text = prediction.split("\t", 2)
+
+            self.assertIsInstance(filename, str, "Expected filename to be a string")
+            self.assertIsInstance(line_id, str, "Expected line_id to be a string")
             self.assertIsInstance(pred_text, str, "Expected predicted text to be a string")
+
+            # composite-key validation
+            valid_pairs = {(r["filename"], r["line_id"]) for r in self.records}
+            self.assertIn(
+                (filename, line_id),
+                valid_pairs,
+                "Inference output (filename, line_id) not found in input records"
+            )
 
 
 if __name__ == "__main__":

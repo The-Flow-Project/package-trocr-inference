@@ -155,12 +155,15 @@ class Inference:
         inferred_lines = {}
         for result in inference_result:
             try:
-                filename, inferred_text = result.split("\t")
-                inferred_lines[filename] = inferred_text
-                self.statusManager.update_progress(status_type="success", current_item_name=filename)
+                filename, line_id, inferred_text = result.split("\t", 2)
+                inferred_lines[(filename, line_id)] = inferred_text
+                self.statusManager.update_progress(status_type="success", current_item_name=line_id)
             except ValueError as ve:
                 logger.error(f"Malformed inference result: {result} - Error: {ve}")
-                self.statusManager.update_progress(status_type="failure_inference", current_item_name=filename)
+                self.statusManager.update_progress(
+                    status_type="failure_inference",
+                    current_item_name="unknown_line_id"
+                )
 
         return inferred_lines
 
@@ -169,7 +172,7 @@ class Inference:
     # ===========================================================================
     def write_inference_to_dataframe(
             self,
-            inferred_lines: Dict[str, str],
+            inferred_lines: Dict[tuple[str, str], str],
             original_df: pd.DataFrame
     ) -> pd.DataFrame:
         """
@@ -179,20 +182,28 @@ class Inference:
 
         updated_df = original_df.copy()
 
-        # Create unique timestamped column name
         timestamp = datetime.now().isoformat(timespec="seconds").replace(":", "-")
         new_col = f"inference_{timestamp}_model_{self.trocr_model}"
 
-        updated_df[new_col] = None
-        updated_df[new_col] = updated_df[new_col].astype("string").fillna("")
+        updated_df[new_col] = ""
+        updated_df[new_col] = updated_df[new_col].astype("string")
 
         updated_count = 0
-        for filename, text in inferred_lines.items():
-            if filename in updated_df["filename"].values:
-                updated_df.loc[updated_df["filename"] == filename, new_col] = text
-                updated_count += 1
+
+        for (filename, line_id), text in inferred_lines.items():
+
+            mask = (
+                    (updated_df["filename"] == filename) &
+                    (updated_df["line_id"] == line_id)
+            )
+
+            if mask.any():
+                updated_df.loc[mask, new_col] = text
+                updated_count += int(mask.sum())
             else:
-                logger.warning(f"No matching filename found for {filename}")
+                logger.warning(
+                    f"No matching row found for filename='{filename}', line_id='{line_id}'"
+                )
 
         logger.info(f"Created column '{new_col}' and updated {updated_count} rows.")
         return updated_df
