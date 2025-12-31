@@ -156,7 +156,10 @@ class InferenceHandler:
             )
 
             logger.info(f"Number of lines to infer: {len(inference_dataset)}")
-            num_workers = min(4, os.cpu_count() or 1)
+            if self.device.type == "cuda":
+                num_workers = 0
+            else:
+                num_workers = min(4, os.cpu_count() or 1)
 
             inference_dataloader = DataLoader(
                 inference_dataset,
@@ -165,7 +168,7 @@ class InferenceHandler:
                 shuffle=False,
                 pin_memory=(self.device.type == "cuda"),
                 num_workers=num_workers,
-                persistent_workers=(self.device.type == "cuda" and num_workers > 0)
+                persistent_workers=False
             )
         except FileNotFoundError as e:
             logger.error(f"File not found during dataset preparation: {e}")
