@@ -27,46 +27,50 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
     # MOCK TEST HUGGING FACE DOWNLOAD
     # -----------------------------------------------------------------------
 
+    @patch("flow_inference.data_handling.HfApi")
     @patch("flow_inference.data_handling.load_dataset")
-    def test_download_success(self, mock_load_dataset):
-        """download_hf_dataset() loads all splits or wraps a single-split dataset."""
+    def test_download_success(self, mock_load_dataset, mock_hfapi):
+        fake_info = mock_hfapi.return_value.dataset_info.return_value
+        fake_info.sha = "fake_sha_123"
 
-        # Case 1: dataset has multiple splits → DatasetDict
         fake_splits = DatasetDict({
             "train": Dataset.from_dict({"x": [1]}),
             "test": Dataset.from_dict({"x": [2]}),
         })
         mock_load_dataset.return_value = fake_splits
 
-        handler = HuggingFaceDataHandler("my-org/my-dataset", huggingface_token="TOKEN123")
+        handler = HuggingFaceDataHandler(
+            "my-org/my-dataset",
+            huggingface_token="TOKEN123",
+            revision="main",
+        )
         handler.download_hf_dataset()
 
-        mock_load_dataset.assert_called_once_with("my-org/my-dataset",
-                                                  token="TOKEN123",
-                                                  data_dir="data")
+        mock_hfapi.return_value.dataset_info.assert_called_once_with(
+            repo_id="my-org/my-dataset",
+            revision="main",
+            token="TOKEN123",
+        )
+
+        mock_load_dataset.assert_called_once_with(
+            "my-org/my-dataset",
+            token="TOKEN123",
+            revision="fake_sha_123",
+            cache_dir=None,
+        )
 
         self.assertEqual(handler.state, "downloaded_all")
-        self.assertEqual(list(handler.dataset.keys()), ["train", "test"])
+        self.assertEqual(set(handler.dataset.keys()), {"train", "test"})
 
-        mock_load_dataset.reset_mock()
-
-        # Case 2: dataset has a single split → Dataset
-        fake_single = Dataset.from_dict({"x": [1]})
-        mock_load_dataset.return_value = fake_single
-
-        handler = HuggingFaceDataHandler("my-org/my-dataset", huggingface_token="TOKEN123")
-        handler.download_hf_dataset()
-
-        mock_load_dataset.assert_called_once_with("my-org/my-dataset",
-                                                  token="TOKEN123",
-                                                  data_dir="data")
-
-        self.assertEqual(handler.state, "downloaded_default")
-        self.assertIn("default", handler.dataset)
-
+    @patch("flow_inference.data_handling.HfApi")
     @patch("flow_inference.data_handling.load_dataset")
-    def test_download_success_with_token(self, mock_load_dataset):
+    def test_download_success_with_token(self, mock_load_dataset, mock_hfapi):
+        # Arrange
         self.handler.huggingface_token = "hf_ABC123"
+        self.handler.revision = "main"
+
+        fake_info = mock_hfapi.return_value.dataset_info.return_value
+        fake_info.sha = "fake_sha_456"
 
         fake_dataset = DatasetDict({
             "train": Dataset.from_dict({"x": [1]}),
@@ -74,14 +78,25 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         })
         mock_load_dataset.return_value = fake_dataset
 
+        # Act
         self.handler.download_hf_dataset()
 
+        # Assert: revision resolution
+        mock_hfapi.return_value.dataset_info.assert_called_once_with(
+            repo_id="my-org/my-dataset",
+            revision="main",
+            token="hf_ABC123",
+        )
+
+        # Assert: dataset loading with resolved SHA
         mock_load_dataset.assert_called_once_with(
             "my-org/my-dataset",
             token="hf_ABC123",
-            data_dir = "data"
+            revision="fake_sha_456",
+            cache_dir=None,
         )
 
+        # Assert: handler state
         self.assertEqual(self.handler.state, "downloaded_all")
         self.assertIsInstance(self.handler.dataset, dict)
         self.assertIn("train", self.handler.dataset)

@@ -6,6 +6,7 @@ from datasets import load_dataset, Split, Dataset, DatasetDict
 import pandas as pd
 from datasets.exceptions import *
 from flow_inference.utils.logging.inference_logger import logger
+from huggingface_hub import HfApi
 
 
 # ===============================================================================
@@ -19,7 +20,10 @@ class HuggingFaceDataHandler:
     def __init__(self,
                  dataset_name: str,
                  huggingface_token: str | None = None,
-                 split: str | Split | None = None):
+                 split: str | Split | None = None,
+                 cache_dir: Optional[str] = None,
+                 revision: str = "main"
+                 ):
         """
         Initialize the dataset loader.
 
@@ -29,6 +33,8 @@ class HuggingFaceDataHandler:
         self.dataset_name = dataset_name
         self.huggingface_token = huggingface_token
         self.split = split
+        self.cache_dir = cache_dir
+        self.revision = revision
         self.dataset: Optional[Dict[str, Dataset]] = None
         self.df: Optional[Dict[str, pd.DataFrame]] = None
         self.state: str = 'initialized'
@@ -43,9 +49,28 @@ class HuggingFaceDataHandler:
         logger.info(f"Downloading all splits for dataset: {self.dataset_name}")
 
         try:
-            hf_dataset = load_dataset(self.dataset_name,
-                                      token=self.huggingface_token,
-                                      data_dir="data")
+            api = HfApi()
+            info = api.dataset_info(
+                repo_id=self.dataset_name,
+                revision=self.revision,
+                token=self.huggingface_token,
+            )
+            resolved_sha = info.sha
+
+            logger.info(
+                f"Resolved dataset revision: {resolved_sha} (requested: {self.revision})"
+            )
+
+            effective_cache_dir = (
+                f"{self.cache_dir}/{resolved_sha}" if self.cache_dir else None
+            )
+
+            hf_dataset = load_dataset(
+                self.dataset_name,
+                token=self.huggingface_token,
+                revision=resolved_sha,
+                cache_dir=effective_cache_dir,
+            )
 
             # Case 1 — dataset has splits
             if isinstance(hf_dataset, DatasetDict):
