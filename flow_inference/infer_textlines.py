@@ -2,6 +2,7 @@
 # IMPORT STATEMENTS
 # ===============================================================================
 import os
+import time
 from typing import List, Union, Dict
 import torch
 from torch.utils.data import DataLoader
@@ -26,6 +27,7 @@ class InferenceHandler:
         :param device: cuda, mps or cpu.
         """
         self.model = model
+        self.model.eval()
         self.processor = processor
         self.device = device
 
@@ -72,36 +74,55 @@ class InferenceHandler:
         inferred_txt = []
 
         logger.info("Starting batch inference...")
+        start_time = time.perf_counter()
+        total_lines = 0
+        use_amp = device.type == "cuda"
 
-        for batch in tqdm(inference_dataloader):
-            try:
-                pixel_values = batch['pixel_values'].to(device)
-            except KeyError as e:
-                logger.error(f"Missing 'pixel_values' in batch: {e}")
-                raise KeyError(f"Missing 'pixel_values' in batch: {e}")
+        with torch.inference_mode():
+            for batch in tqdm(inference_dataloader):
+                try:
+                    pixel_values = batch['pixel_values'].to(device,
+                                                            non_blocking=True)
+                except KeyError as e:
+                    logger.error(f"Missing 'pixel_values' in batch: {e}")
+                    raise KeyError(f"Missing 'pixel_values' in batch: {e}")
 
-            try:
-                outputs = model.generate(pixel_values, max_new_tokens=max_new_tokens)
-            except RuntimeError as e:
-                logger.error(f"Error during model.generate: {e}")
-                raise RuntimeError(f"Error during model.generate: {e}")
+                try:
+                    with torch.autocast(
+                            device_type="cuda",
+                            dtype=torch.float16,
+                            enabled=use_amp,
+                    ):
+                        outputs = model.generate(pixel_values,
+                                                 max_new_tokens=max_new_tokens)
+                except RuntimeError as e:
+                    logger.error(f"Error during model.generate: {e}")
+                    raise RuntimeError(f"Error during model.generate: {e}")
 
-            try:
-                pred_str = processor.batch_decode(outputs, skip_special_tokens=True)
-            except ValueError as e:
-                logger.error(f"Error decoding predictions: {e}")
-                raise ValueError(f"Error decoding predictions: {e}")
+                try:
+                    pred_str = processor.batch_decode(outputs,
+                                                      skip_special_tokens=True)
+                except ValueError as e:
+                    logger.error(f"Error decoding predictions: {e}")
+                    raise ValueError(f"Error decoding predictions: {e}")
 
-            line_ids = batch["line_ids"]
-            filenames = batch["filenames"]
-            line = [
-                f'{filename}\t{line_id}\t{pred}'
-                for filename, line_id, pred in zip(filenames, line_ids, pred_str)
-            ]
-            inferred_txt.extend(line)
+                line_ids = batch["line_ids"]
+                filenames = batch["filenames"]
+                inferred_txt.extend(
+                    "\t".join((filename, line_id, pred))
+                    for filename, line_id, pred in zip(filenames, line_ids, pred_str)
+                )
 
-        logger.info(f"Batch inference completed. Total lines processed: {len(inferred_txt)}")
-        return inferred_txt
+                total_lines += len(pred_str)
+
+            elapsed = time.perf_counter() - start_time
+            speed = total_lines / elapsed if elapsed > 0 else 0.0
+
+            logger.info(
+                f"Batch inference completed: {total_lines} lines "
+                f"in {elapsed:.2f}s ({speed:.2f} lines/sec)"
+            )
+            return inferred_txt
 
     def infer(self,
               records: List[dict],
@@ -134,13 +155,17 @@ class InferenceHandler:
                 image_handler=image_handler
             )
 
-            print('Number of lines to infer:', len(inference_dataset))
+            logger.info(f"Number of lines to infer: {len(inference_dataset)}")
+            num_workers = min(4, os.cpu_count() or 1)
 
             inference_dataloader = DataLoader(
                 inference_dataset,
                 collate_fn=self.custom_collate_fn,
                 batch_size=batch_size,
                 shuffle=False,
+                pin_memory=(self.device.type == "cuda"),
+                num_workers=num_workers,
+                persistent_workers=(self.device.type == "cuda" and num_workers > 0)
             )
         except FileNotFoundError as e:
             logger.error(f"File not found during dataset preparation: {e}")
