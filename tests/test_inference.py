@@ -4,6 +4,8 @@ import pandas as pd
 from flow_inference.inference import Inference
 from dotenv import load_dotenv
 
+from flow_inference.model_handling import ModelManager
+
 
 class TestInference(unittest.TestCase):
 
@@ -104,7 +106,19 @@ class TestInference(unittest.TestCase):
 
         self.inference.statusManager.initialize_status(len(records))
 
-        result_dict = self.inference.run_inference(records)
+        model_manager = ModelManager()
+        processor = model_manager.load_processor(self.inference.trocr_model)
+        model = model_manager.load_model(self.inference.trocr_model)
+
+        self.assertIsNotNone(model)
+        self.assertIsNotNone(processor)
+
+        result_dict = self.inference.run_inference(
+            records=records,
+            model=model,
+            processor=processor,
+            device=model_manager.device
+        )
 
         self.assertIsInstance(result_dict, dict, "Expected inference result to be a dictionary")
         self.assertGreater(len(result_dict), 0, "Inference result dictionary is empty")

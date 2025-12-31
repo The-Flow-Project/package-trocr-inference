@@ -37,6 +37,13 @@ class Inference:
         self.private_repo = private_repo
         self.upload_repo_name = upload_repo_name or download_repo_name
         self.statusManager = Status()
+        self.model_manager = ModelManager()
+        self.processor = self.model_manager.load_processor(self.trocr_model)
+        self.model = self.model_manager.load_model(self.trocr_model)
+        self.device = self.model_manager.device
+
+        if self.processor is None or self.model is None:
+            raise RuntimeError("Failed to load TrOCR model or processor")
 
         logger.debug(f"Inference initialized with Hugging Face dataset: {download_repo_name}")
 
@@ -83,7 +90,12 @@ class Inference:
 
         for split, recs in records.items():
             if split in self.requested_splits or split == "default":
-                result = self.run_inference(recs)
+                result = self.run_inference(
+                    records=recs,
+                    model=self.model,
+                    processor=self.processor,
+                    device=self.device
+                )
                 inferred[split] = result if result is not None else {}
             else:
                 inferred[split] = {}
@@ -122,27 +134,25 @@ class Inference:
     # ===========================================================================
     # INFERENCE
     # ===========================================================================
-    def run_inference(self, records: List[dict]) -> Optional[Dict[str, str]]:
+    def run_inference(
+            self,
+            records: list[dict],
+            model,
+            processor,
+            device
+    ) -> dict[tuple[str, str], str]:
         """
         Run inference on provided image records.
         """
         logger.debug(f"Running inference on {len(records)} records.")
 
-        # Load model and processor
-        model_manager = ModelManager()
-        processor = model_manager.load_processor(self.trocr_model)
-        model = model_manager.load_model(self.trocr_model)
-
-        if processor is None or model is None:
-            logger.error("Failed to load model or processor. Aborting.")
-            return None
-
         image_handler = ImageHandler(
             processor=processor,
             target_image_size=self.target_image_size
         )
+
         inference_handler = InferenceHandler(
-            device=model_manager.device,
+            device=device,
             model=model,
             processor=processor
         )
