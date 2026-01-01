@@ -1,6 +1,7 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
+import tempfile
 from typing import List, Dict
 from datasets import load_dataset, Split, Dataset, DatasetDict
 import pandas as pd
@@ -61,6 +62,9 @@ class HuggingFaceDataHandler:
                 f"Resolved dataset revision: {resolved_sha} (requested: {self.revision})"
             )
 
+            if not self.cache_dir:
+                self.cache_dir = tempfile.mkdtemp(prefix="hf_ds_")
+
             effective_cache_dir = (
                 f"{self.cache_dir}/{resolved_sha}" if self.cache_dir else None
             )
@@ -70,6 +74,7 @@ class HuggingFaceDataHandler:
                 token=self.huggingface_token,
                 revision=resolved_sha,
                 cache_dir=effective_cache_dir,
+                data_files="data/*.parquet"
             )
 
             # Case 1 — dataset has splits
