@@ -1,3 +1,5 @@
+import tempfile
+
 import pandas as pd
 from datasets import load_dataset, Dataset
 from huggingface_hub import HfApi
@@ -51,8 +53,27 @@ class InferenceToRawXMLWriter:
         return ds[next(iter(ds.keys()))]
 
     def load_datasets(self):
-        raw = load_dataset(self.raw_xml_repo, token=self.token)
-        inf = load_dataset(self.inference_repo, token=self.token)
+        api = HfApi()
+
+        raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
+        inf_info = api.dataset_info(self.inference_repo, token=self.token)
+
+        raw_cache = tempfile.mkdtemp(prefix="hf_raw_")
+        inf_cache = tempfile.mkdtemp(prefix="hf_inf_")
+
+        raw = load_dataset(
+            self.raw_xml_repo,
+            token=self.token,
+            revision=raw_info.sha,
+            cache_dir=raw_cache,
+        )
+
+        inf = load_dataset(
+            self.inference_repo,
+            token=self.token,
+            revision=inf_info.sha,
+            cache_dir=inf_cache,
+        )
 
         self.raw_dataset = self._extract_default(raw)
         self.inference_dataset = self._extract_default(inf)
