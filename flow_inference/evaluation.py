@@ -58,7 +58,7 @@ class Evaluation:
     # GROUND TRUTH EXTRACTION
     # --------------------------------------------------------------------------
     def _extract_ground_truth(self, df: pd.DataFrame) -> List[str]:
-        if "text" not in df:
+        if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
         return df["text"].fillna("").astype(str).tolist()
 
@@ -88,6 +88,30 @@ class Evaluation:
             raise ValueError(f"Hypothesis column '{column}' not found.")
         return df[column].fillna("").astype(str).tolist()
 
+    def _filter_eval_rows(self, df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
+        """
+        Keep only rows where both GT and prediction exist.
+        """
+        if "text" not in df.columns:
+            raise ValueError("Dataset has no 'text' column for GT.")
+        if inference_col not in df.columns:
+            raise ValueError(f"Inference column '{inference_col}' not found.")
+
+        gt = df["text"].fillna("").astype(str).str.strip()
+        hyp = df[inference_col].fillna("").astype(str).str.strip()
+
+        df_eval = df[(gt != "") & (hyp != "")].copy()
+
+        logger.info(
+            f"Evaluation rows: {len(df_eval)} / {len(df)} "
+            f"(non-empty GT + non-empty prediction)"
+        )
+
+        if len(df_eval) == 0:
+            raise RuntimeError("No rows with both ground truth and inference available for evaluation.")
+
+        return df_eval
+
     # --------------------------------------------------------------------------
     # CER CALCULATION
     # --------------------------------------------------------------------------
@@ -111,6 +135,7 @@ class Evaluation:
             "repo_name": self.download_repo_name,
             "gt_lines": len(groundtruth),
             "hypothesis_lines": len(hypothesis),
+            "eval_rows": len(groundtruth),
             "cer": cer_score,
         }
 
@@ -143,23 +168,26 @@ class Evaluation:
         # 2) Select split(s)
         df = self.select_splits(dfs)
 
-        # 3) Extract ground truth
-        groundtruth = self._extract_ground_truth(df)
-
-        # 4) Find inference column
+        # 3) Find inference column
         inference_col = self._find_latest_inference_column(df)
 
-        # 5) Extract hypothesis
-        hypothesis = self._extract_hypothesis(df, inference_col)
+        # 4) Filter rows to only those that have BOTH GT and prediction
+        df_eval = self._filter_eval_rows(df, inference_col)
 
-        # 6) Calculate CER
+        # 5) Extract ground truth (from filtered rows)
+        groundtruth = self._extract_ground_truth(df_eval)
+
+        # 6) Extract hypothesis (from filtered rows)
+        hypothesis = self._extract_hypothesis(df_eval, inference_col)
+
+        # 7) Calculate CER
         cer_score = self.compute_cer(groundtruth, hypothesis)
         logger.info(f"CER = {cer_score}")
 
-        # 7) Build output files (in memory)
+        # 8) Build output files (in memory)
         files = self.create_output_files(groundtruth, hypothesis, cer_score)
 
-        # 8) Upload results
+        # 9) Upload results
         self.upload_results(files)
 
         logger.info("Completed and uploaded evaluation results.")

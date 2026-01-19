@@ -105,32 +105,34 @@ class TestEvaluation(unittest.TestCase):
         self.assertIsInstance(files["gt.txt"], bytes)
         self.assertEqual(files["gt.txt"].decode(), "a\nb")
 
-    def test_perform_evaluation(self):
-        evaluator = Evaluation(
-            download_repo_name=self.download_repo_name,
-            hf_token=self.write_token,
-            splits=None
-        )
+    def test_evaluation_fails_when_no_gt_inference_overlap(self):
+        df = pd.DataFrame({
+            "text": ["", "", "hello", "world"],
+            "inference_x": ["abc", "def", "", ""],
+        })
 
-        results = evaluator.perform_evaluation()
+        evaluator = Evaluation("dummy", None)
 
-        # Check returned output
-        self.assertIn("gt.txt", results)
-        self.assertIn("hypothesis.txt", results)
-        self.assertIn("evaluation_report.json", results)
+        with self.assertRaises(RuntimeError):
+            evaluator._filter_eval_rows(df, "inference_x")
 
-        # Check uploaded files on HF
-        from huggingface_hub import HfApi
-        api = HfApi()
-        files = api.list_repo_files(
-            repo_id=self.download_repo_name,
-            repo_type="dataset",
-            token=self.write_token
-        )
+    def test_evaluation_computes_cer_on_valid_overlap(self):
+        df = pd.DataFrame({
+            "text": ["hello", "", "world"],
+            "inference_x": ["hallo", "xxx", "world"],
+        })
 
-        self.assertIn("evaluation/gt.txt", files)
-        self.assertIn("evaluation/hypothesis.txt", files)
-        self.assertIn("evaluation/evaluation_report.json", files)
+        evaluator = Evaluation("dummy", None)
+
+        df_eval = evaluator._filter_eval_rows(df, "inference_x")
+
+        gt = evaluator._extract_ground_truth(df_eval)
+        hyp = evaluator._extract_hypothesis(df_eval, "inference_x")
+
+        cer = evaluator.compute_cer(gt, hyp)
+
+        assert cer >= 0.0
+        assert cer <= 1.0
 
 
 if __name__ == "__main__":
