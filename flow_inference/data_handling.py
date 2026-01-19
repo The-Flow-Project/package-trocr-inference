@@ -10,6 +10,7 @@ from datasets.exceptions import DatasetNotFoundError
 from flow_inference.utils.logging.inference_logger import logger
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub._commit_api import CommitOperationAdd
+import re
 
 
 # ===============================================================================
@@ -75,19 +76,22 @@ class HuggingFaceDataHandler:
     # SNAPSHOT DOWNLOAD HELPERS
     # --------------------------------------------------------------------------
     def _build_allow_patterns(self) -> list[str]:
+        patterns = ["README.md"]
+
         if self.auto_split:
-            return ["data/**/*.parquet"]
+            patterns.append("data/**/*.parquet")
+            return patterns
 
         if self.requested_splits == {"default"}:
-            return ["data/**/*.parquet"]
+            patterns.append("data/**/*.parquet")
+            return patterns
 
-        patterns = []
         if "train" in self.requested_splits:
             patterns.append("data/train/**/*.parquet")
         if "test" in self.requested_splits:
             patterns.append("data/test/**/*.parquet")
 
-        return patterns or ["data/**/*.parquet"]
+        return patterns
 
     def _download_snapshot(self, allow_patterns: list[str]) -> Path:
         if not self.cache_dir:
@@ -265,14 +269,80 @@ class HuggingFaceDataHandler:
         hf_path = str(local_path.relative_to(self._local_root)).replace("\\", "/")
         return CommitOperationAdd(path_in_repo=hf_path, path_or_fileobj=str(local_path))
 
+    def _rewrite_dataset_card_title(self, readme_text: str, target_repo: str) -> str:
+        """
+        Rewrites lines like:
+          '# Dataset Card for rawxml-to-line-test'
+        to:
+          '# Dataset Card for <target_repo>'
+        """
+        target_short = target_repo.split("/")[-1]
+
+        # match beginning of line (multiline) and replace the whole title
+        return re.sub(
+            r'(?m)^(#\s*Dataset Card for\s+).*$',
+            rf'\1{target_short}',
+            readme_text
+        )
+
+    def _rewrite_usage_repo_ids(self, readme_text: str, target_repo: str) -> str:
+        """
+        Rewrites repo ids inside common usage snippets like:
+          load_dataset("someone/old-repo")
+          load_dataset('someone/old-repo', split="train")
+        to the new target_repo.
+        """
+        # Replace load_dataset("...") / load_dataset('...')
+        pattern = r'(load_dataset\(\s*[\'"])([^\'"]+)([\'"])'
+        return re.sub(pattern, rf"\1{target_repo}\3", readme_text)
+
+    def _add_readme_commit_op(self, target_repo: str) -> CommitOperationAdd | None:
+        if not self._local_root:
+            return None
+
+        readme = self._local_root / "README.md"
+        if not readme.exists():
+            logger.info("No README.md found in source repo")
+            return None
+
+        text = readme.read_text(encoding="utf-8")
+
+        # Fix any hard-coded load_dataset("...") usage repo ids
+        text = self._rewrite_usage_repo_ids(text, target_repo)
+
+        # Fix the dataset card title line
+        text = self._rewrite_dataset_card_title(text, target_repo)
+
+        # replace direct mentions of the source dataset name if present
+        text = text.replace(self.dataset_name, target_repo)
+
+        return CommitOperationAdd(
+            path_in_repo="README.md",
+            path_or_fileobj=text.encode("utf-8"),
+        )
+
+    def _extract_dataset_yaml(self) -> str:
+        """
+        Extracts dataset_info from the loaded dataset and converts it to YAML.
+        """
+        if not self.dataset:
+            return ""
+
+        info = self.dataset.info
+        if not info:
+            return ""
+
+        import yaml
+        return yaml.safe_dump(info.to_dict(), sort_keys=False)
+
     # ==========================================================================
     # PUSH UPDATED DATASET
     # ==========================================================================
     def push_to_hub(
-        self,
-        upload_repo_name: str,
-        private: bool = True,
-        commit_message: str = "Upload updated dataset",
+            self,
+            upload_repo_name: str,
+            private: bool = True,
+            commit_message: str = "Upload updated dataset",
     ):
         if self.df is None:
             raise RuntimeError("No DataFrames stored. Call to_dataframe() first.")
@@ -292,11 +362,17 @@ class HuggingFaceDataHandler:
             token=self.huggingface_token,
         )
 
+        # ------------------------------------------------------------------
+        # 1) Index DataFrames by composite key
+        # ------------------------------------------------------------------
         df_by_split_idx = {
             split: self._index_df_by_key(df, split)
             for split, df in self.df.items()
         }
 
+        # ------------------------------------------------------------------
+        # 2) Update parquet files + add commit operations
+        # ------------------------------------------------------------------
         for split, parquet_files in self.parquet_paths.items():
             if split not in df_by_split_idx:
                 continue
@@ -306,6 +382,16 @@ class HuggingFaceDataHandler:
                 self._update_parquet_file(local_path, df_by_split_idx[split])
                 operations.append(self._make_commit_op(local_path))
 
+        # ------------------------------------------------------------------
+        # 3) Add README to same commit
+        # ------------------------------------------------------------------
+        readme_op = self._add_readme_commit_op(upload_repo_name)
+        if readme_op:
+            operations.append(readme_op)
+
+        # ------------------------------------------------------------------
+        # 4) Single commit (parquet + README)
+        # ------------------------------------------------------------------
         api.create_commit(
             repo_id=upload_repo_name,
             repo_type="dataset",
@@ -314,7 +400,7 @@ class HuggingFaceDataHandler:
             token=self.huggingface_token,
         )
 
-        logger.info(f"Uploaded updated parquet files to HF Hub: {upload_repo_name}")
+        logger.info(f"Uploaded updated parquet files + README to HF Hub: {upload_repo_name}")
         self.state = "pushed"
 
     # ==========================================================================

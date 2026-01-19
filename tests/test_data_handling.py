@@ -80,7 +80,8 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         # snapshot_download must download ALL parquet so layout can be detected
         self.assertTrue(mock_snapshot_download.called)
         sd_kwargs = mock_snapshot_download.call_args.kwargs
-        self.assertEqual(sd_kwargs["allow_patterns"], ["data/**/*.parquet"])
+        self.assertIn("data/**/*.parquet", sd_kwargs["allow_patterns"])
+        self.assertIn("README.md", sd_kwargs["allow_patterns"])
 
         # load_dataset should be called with parquet + explicit file lists
         self.assertTrue(mock_load_dataset.called)
@@ -250,7 +251,6 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
     def test_push_to_hub(self, mock_hfapi):
         """
         Tests the new push_to_hub:
-        - updates parquet files in-place based on key_col (line_id)
         - computes repo path relative to local snapshot root (preserves structure)
         - uses HfApi.create_commit with CommitOperationAdd operations
         """
@@ -265,10 +265,14 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         test_path = local_root / "data/test/docB/test_file.parquet"
 
         df_train_orig = pd.DataFrame({
+            "project_name": ["docA"] * 3,
+            "filename": ["train_file"] * 3,
             "line_id": ["L1", "L2", "L3"],
             "text": ["", "", ""],
         })
         df_test_orig = pd.DataFrame({
+            "project_name": ["docB", "docB", "docB"],
+            "filename": ["test_file", "test_file", "test_file"],
             "line_id": ["T1", "T2", "T3"],
             "text": ["", "", ""],
         })
@@ -291,11 +295,15 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         # Inference results in df (note: only some keys updated)
         handler.df = {
             "train": pd.DataFrame({
+                "project_name": ["docA", "docA"],
+                "filename": ["train_file", "train_file"],
                 "line_id": ["L2", "L3"],
                 "text": ["hello", "world"],
                 "inference_col": ["pred2", "pred3"],
             }),
             "test": pd.DataFrame({
+                "project_name": ["docB"],
+                "filename": ["test_file"],
                 "line_id": ["T1"],
                 "text": ["test-hi"],
                 "inference_col": ["predT1"],
@@ -304,8 +312,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         handler.push_to_hub(
             upload_repo_name="fake/upload",
-            commit_message="Unit test commit",
-            key_col="line_id",
+            commit_message="Unit test commit"
         )
 
         # Verify parquet files were updated correctly in-place
@@ -341,6 +348,78 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertIn("data/test/docB/test_file.parquet", paths_in_repo)
 
         self.assertEqual(handler.state, "pushed")
+
+    @patch("flow_inference.data_handling.HfApi")
+    def test_readme_is_copied_and_rewritten(self, mock_hfapi):
+        tmp_root = Path(tempfile.mkdtemp())
+        snapshot = tmp_root / "snapshot"
+        snapshot.mkdir(parents=True)
+
+        readme = snapshot / "README.md"
+        readme.write_text(
+            'from datasets import load_dataset\n'
+            'dataset = load_dataset("old/repo")\n',
+            encoding="utf-8"
+        )
+
+        handler = HuggingFaceDataHandler(
+            dataset_name="old/repo",
+            huggingface_token="TOKEN"
+        )
+        handler._local_root = snapshot
+        handler.df = {"train": pd.DataFrame(columns=["project_name","filename","line_id"])}
+        handler.parquet_paths = {}
+        handler.state = "converted"
+
+        handler.parquet_paths = {"train": []}
+        handler.df = {"train": pd.DataFrame({
+            "project_name": [],
+            "filename": [],
+            "line_id": [],
+        })}
+        handler.push_to_hub("new/repo")
+
+        ops = mock_hfapi.return_value.create_commit.call_args.kwargs["operations"]
+
+        readme_ops = [op for op in ops if op.path_in_repo == "README.md"]
+        self.assertEqual(len(readme_ops), 1)
+
+        content = readme_ops[0].path_or_fileobj.decode()
+        self.assertIn('load_dataset("new/repo")', content)
+
+    def test_index_df_by_composite_key_deduplicates(self):
+        df = pd.DataFrame({
+            "project_name": ["p", "p"],
+            "filename": ["f", "f"],
+            "line_id": ["1", "1"],
+            "text": ["old", "new"]
+        })
+
+        handler = HuggingFaceDataHandler("x/y")
+        idx = handler._index_df_by_key(df, "train")
+
+        self.assertEqual(len(idx), 1)
+        self.assertEqual(idx.iloc[0]["text"], "new")
+
+    def test_only_selected_split_is_updated(self):
+        handler = HuggingFaceDataHandler("x/y", split=["train"])
+
+        handler.df = {
+            "train": pd.DataFrame({
+                "project_name": ["p"],
+                "filename": ["f"],
+                "line_id": ["1"],
+                "text": ["new"]
+            })
+        }
+
+        handler.parquet_paths = {
+            "train": ["train.parquet"],
+            "test": ["test.parquet"]
+        }
+
+        self.assertIn("train", handler.df)
+        self.assertNotIn("test", handler.df)
 
 
 if __name__ == "__main__":
