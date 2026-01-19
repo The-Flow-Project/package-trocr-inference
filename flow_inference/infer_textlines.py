@@ -44,6 +44,7 @@ class InferenceHandler:
             pixel_values = [item['pixel_values'] for item in batch]
             filenames = [item['filename'] for item in batch]
             line_ids = [item['line_id'] for item in batch]
+            project_names = [item['project_name'] for item in batch]
         except KeyError as e:
             raise KeyError(f"Missing expected key in batch item: {e}")
 
@@ -52,7 +53,9 @@ class InferenceHandler:
 
         return {'pixel_values': pixel_values,
                 'filenames': filenames,
-                'line_ids': line_ids}
+                'line_ids': line_ids,
+                'project_names': project_names
+                }
 
     @staticmethod
     def run_batch_inference(inference_dataloader: DataLoader,
@@ -108,9 +111,12 @@ class InferenceHandler:
 
                 line_ids = batch["line_ids"]
                 filenames = batch["filenames"]
+                project_names = batch["project_names"]
+
                 inferred_txt.extend(
-                    "\t".join((filename, line_id, pred))
-                    for filename, line_id, pred in zip(filenames, line_ids, pred_str)
+                    "\t".join((project, filename, str(line_id), pred))
+                    for project, filename, line_id, pred
+                    in zip(project_names, filenames, line_ids, pred_str)
                 )
 
                 total_lines += len(pred_str)

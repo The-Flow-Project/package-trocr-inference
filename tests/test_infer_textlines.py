@@ -112,18 +112,23 @@ class TestInferenceHandler(unittest.TestCase):
             self.assertIsInstance(prediction, str, "Expected each prediction to be a string")
             self.assertIn("\t", prediction, "Prediction format is incorrect: missing tab separator")
 
-            filename, line_id, pred_text = prediction.split("\t", 2)
+            project, filename, line_id, pred_text = prediction.split("\t", 3)
 
+            self.assertIsInstance(project, str, "Expected project to be a string")
             self.assertIsInstance(filename, str, "Expected filename to be a string")
             self.assertIsInstance(line_id, str, "Expected line_id to be a string")
             self.assertIsInstance(pred_text, str, "Expected predicted text to be a string")
 
             # composite-key validation
-            valid_pairs = {(r["filename"], r["line_id"]) for r in self.records}
+            valid_keys = {
+                (r["project_name"], r["filename"], r["line_id"])
+                for r in self.records
+            }
+
             self.assertIn(
-                (filename, line_id),
-                valid_pairs,
-                "Inference output (filename, line_id) not found in input records"
+                (project, filename, line_id),
+                valid_keys,
+                "Inference output (project, filename, line_id) not found in input records"
             )
 
 
