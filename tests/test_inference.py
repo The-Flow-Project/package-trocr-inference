@@ -68,12 +68,14 @@ class TestInference(unittest.TestCase):
                     )
 
                     # ensure no conflicting inference per (filename, line_id)
-                    for (filename, line_id), group in inferred.groupby(["filename", "line_id"]):
+                    for (project, filename, line_id), group in inferred.groupby(
+                            ["project_name", "filename", "line_id"]
+                    ):
                         unique_vals = group[inference_col].unique()
                         self.assertEqual(
                             len(unique_vals),
                             1,
-                            f"Multiple inference values for ({filename}, {line_id}) in split '{split}'"
+                            f"Multiple inference values for ({project}, {filename}, {line_id}) in split '{split}'"
                         )
 
                 # non-requested split: must contain ONLY empty strings
@@ -124,19 +126,24 @@ class TestInference(unittest.TestCase):
         self.assertGreater(len(result_dict), 0, "Inference result dictionary is empty")
         for key, value in result_dict.items():
             self.assertIsInstance(key, tuple)
-            self.assertEqual(len(key), 2)
+            self.assertEqual(len(key), 3)
 
-            filename, line_id = key
+            project, filename, line_id = key
 
+            self.assertIsInstance(project, str)
             self.assertIsInstance(filename, str)
             self.assertIsInstance(line_id, str)
             self.assertIsInstance(value, str)
 
-            valid_keys = {(r["filename"], r["line_id"]) for r in records}
+            valid_keys = {
+                (r["project_name"], r["filename"], r["line_id"])
+                for r in records
+            }
+
             self.assertIn(
-                (filename, line_id),
+                (project, filename, line_id),
                 valid_keys,
-                "Inference result key is not a (filename, line_id) pair from input records"
+                "Inference result key is not a (project_name, filename, line_id) tuple from input records"
             )
 
     def test_full_inference_with_upload(self):
@@ -217,12 +224,14 @@ class TestInference(unittest.TestCase):
                         )
 
                         # One unique inference value per line_id
-                        for (filename, line_id), group in inferred.groupby(["filename", "line_id"]):
+                        for (project, filename, line_id), group in inferred.groupby(
+                                ["project_name", "filename", "line_id"]
+                        ):
                             unique_vals = group[inference_col].unique()
                             self.assertEqual(
                                 len(unique_vals),
                                 1,
-                                f"Multiple inference values found for ({filename}, {line_id}) in split '{split}'"
+                                f"Multiple inference values found for ({project}, {filename}, {line_id}) in split '{split}'"
                             )
 
                     # Unrequested splits: must contain ONLY empty strings

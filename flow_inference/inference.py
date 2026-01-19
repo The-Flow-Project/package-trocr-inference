@@ -140,7 +140,7 @@ class Inference:
             model,
             processor,
             device
-    ) -> dict[tuple[str, str], str]:
+    ) -> dict[tuple[str, str, str], str]:
         """
         Run inference on provided image records.
         """
@@ -165,9 +165,12 @@ class Inference:
         inferred_lines = {}
         for result in inference_result:
             try:
-                filename, line_id, inferred_text = result.split("\t", 2)
-                inferred_lines[(filename, line_id)] = inferred_text
-                self.statusManager.update_progress(status_type="success", current_item_name=line_id)
+                project, filename, line_id, inferred_text = result.split("\t", 3)
+                inferred_lines[(project, filename, line_id)] = inferred_text
+                self.statusManager.update_progress(
+                    status_type="success",
+                    current_item_name=f"{project}:{line_id}"
+                )
             except ValueError as ve:
                 logger.error(f"Malformed inference result: {result} - Error: {ve}")
                 self.statusManager.update_progress(
@@ -182,7 +185,7 @@ class Inference:
     # ===========================================================================
     def write_inference_to_dataframe(
             self,
-            inferred_lines: Dict[tuple[str, str], str],
+            inferred_lines: Dict[tuple[str, str, str], str],
             original_df: pd.DataFrame
     ) -> pd.DataFrame:
         """
@@ -200,9 +203,9 @@ class Inference:
 
         updated_count = 0
 
-        for (filename, line_id), text in inferred_lines.items():
-
+        for (project, filename, line_id), text in inferred_lines.items():
             mask = (
+                    (updated_df["project_name"] == project) &
                     (updated_df["filename"] == filename) &
                     (updated_df["line_id"] == line_id)
             )
@@ -212,13 +215,13 @@ class Inference:
                 updated_count += int(mask.sum())
             else:
                 logger.warning(
-                    f"No matching row found for filename='{filename}', line_id='{line_id}'"
+                    f"No matching row found for project='{project}', filename='{filename}', line_id='{line_id}'"
                 )
 
         logger.info(f"Created column '{new_col}' and updated {updated_count} rows.")
         return updated_df
 
-    def save_results(self, inferred_lines: Dict[tuple[str, str], str], original_df: pd.DataFrame) -> pd.DataFrame:
+    def save_results(self, inferred_lines: Dict[tuple[str, str, str], str], original_df: pd.DataFrame) -> pd.DataFrame:
         """
         Save inference results: add new column + update raw XML strings.
         Returns the updated DataFrame.
