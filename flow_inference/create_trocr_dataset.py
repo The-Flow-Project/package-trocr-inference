@@ -40,6 +40,7 @@ class TrOCRInferenceDataset(Dataset):
         record = self.records[idx]
         filename = record.get("filename")
         line_id = record.get("line_id")
+        project_name = record.get("project_name", "")
 
         logger.debug(f"Fetching in-memory image: {filename} at index: {idx}")
 
@@ -49,7 +50,8 @@ class TrOCRInferenceDataset(Dataset):
             return {
                 "pixel_values": pixel_values,
                 "filename": filename,
-                "line_id": line_id
+                "line_id": line_id,
+                "project_name": project_name
             }
         except ValueError as e:
             logger.error(f"Value error while processing image: {filename}. Error: {e}")
