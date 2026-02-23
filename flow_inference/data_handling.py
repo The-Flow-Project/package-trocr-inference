@@ -10,7 +10,7 @@ from datasets.exceptions import DatasetNotFoundError
 from flow_inference.utils.logging.inference_logger import logger
 from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub._commit_api import CommitOperationAdd
-import re
+from flow_inference.configure_dataset_card import HuggingFaceReadmeEditor
 
 
 # ===============================================================================
@@ -269,33 +269,6 @@ class HuggingFaceDataHandler:
         hf_path = str(local_path.relative_to(self._local_root)).replace("\\", "/")
         return CommitOperationAdd(path_in_repo=hf_path, path_or_fileobj=str(local_path))
 
-    def _rewrite_dataset_card_title(self, readme_text: str, target_repo: str) -> str:
-        """
-        Rewrites lines like:
-          '# Dataset Card for rawxml-to-line-test'
-        to:
-          '# Dataset Card for <target_repo>'
-        """
-        target_short = target_repo.split("/")[-1]
-
-        # match beginning of line (multiline) and replace the whole title
-        return re.sub(
-            r'(?m)^(#\s*Dataset Card for\s+).*$',
-            rf'\1{target_short}',
-            readme_text
-        )
-
-    def _rewrite_usage_repo_ids(self, readme_text: str, target_repo: str) -> str:
-        """
-        Rewrites repo ids inside common usage snippets like:
-          load_dataset("someone/old-repo")
-          load_dataset('someone/old-repo', split="train")
-        to the new target_repo.
-        """
-        # Replace load_dataset("...") / load_dataset('...')
-        pattern = r'(load_dataset\(\s*[\'"])([^\'"]+)([\'"])'
-        return re.sub(pattern, rf"\1{target_repo}\3", readme_text)
-
     def _add_readme_commit_op(self, target_repo: str) -> CommitOperationAdd | None:
         if not self._local_root:
             return None
@@ -305,16 +278,24 @@ class HuggingFaceDataHandler:
             logger.info("No README.md found in source repo")
             return None
 
-        text = readme.read_text(encoding="utf-8")
+        editor = HuggingFaceReadmeEditor(readme.read_text(encoding="utf-8"))
 
-        # Fix any hard-coded load_dataset("...") usage repo ids
-        text = self._rewrite_usage_repo_ids(text, target_repo)
+        # collect new columns automatically
+        new_features = [
+            col
+            for df in self.df.values()
+            for col in df.columns
+            if col.startswith("inference_") or col.startswith("inference_xml_")
+        ]
 
-        # Fix the dataset card title line
-        text = self._rewrite_dataset_card_title(text, target_repo)
-
-        # replace direct mentions of the source dataset name if present
-        text = text.replace(self.dataset_name, target_repo)
+        text = (
+            editor
+            .rewrite_usage_repo_ids(target_repo)
+            .rewrite_title(target_repo)
+            .replace_repo_name(self.dataset_name, target_repo)
+            .add_features(new_features)
+            .render()
+        )
 
         return CommitOperationAdd(
             path_in_repo="README.md",
