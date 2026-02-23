@@ -1,150 +1,152 @@
 import tempfile
-
+from pathlib import Path
 import pandas as pd
-from datasets import load_dataset, Dataset
-from huggingface_hub import HfApi
+from huggingface_hub import HfApi, snapshot_download
+from huggingface_hub._commit_api import CommitOperationAdd
+from datasets import load_dataset
 from huggingface_hub.errors import HfHubHTTPError
 from flow_inference.xml_processing import XMLProcessor
+from flow_inference.configure_dataset_card import HuggingFaceReadmeEditor
 
 
 class InferenceToRawXMLWriter:
-    def __init__(self,
-                 raw_xml_repo: str,
-                 inference_repo: str,
-                 token: str):
+    def __init__(self, raw_xml_repo: str, inference_repo: str, token: str):
         self.raw_xml_repo = raw_xml_repo
         self.inference_repo = inference_repo
         self.token = token
-        self.raw_dataset = None
-        self.inference_dataset = None
 
     # ------------------------------------------------------------
-    # WRITE INFERENCE TO RAW XML PIPELINE
+    # Pipeline
     # ------------------------------------------------------------
-    def process_and_upload(self, output_repo: str = None):
-        """
-        1. Load datasets
-        2. Detect inference column automatically
-        3. Build per-line inference lookup
-        4. Update XML
-        5. Upload updated dataset
-        """
-
-        # Step 1: load datasets
-        self.load_datasets()
-
-        # Step 2: detect inference column + build lookup
-        lookup = self.build_inference_lookup()
-
-        # Step 3: update raw XML column
-        updated_df = self.update_raw_xml_dataset(lookup)
-
-        # Step 4: upload dataset with modified XML to Hugging Face Hub
-        target_repo = output_repo if output_repo else self.raw_xml_repo
-        self.upload_updated_dataset(updated_df, target_repo)
-
-    # ------------------------------------------------------------
-    # HELPER METHODS
-    # ------------------------------------------------------------
-    def _extract_default(self, ds):
-        """Return a dataset regardless of split structure."""
-        if isinstance(ds, Dataset):
-            return ds
-        return ds[next(iter(ds.keys()))]
-
-    def load_datasets(self):
+    def process_and_upload(self, output_repo: str | None = None):
         api = HfApi()
 
-        raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
+        target_repo = output_repo or self.raw_xml_repo
+
+        # --------------------------------------------------
+        # 1. Load inference
+        # --------------------------------------------------
         inf_info = api.dataset_info(self.inference_repo, token=self.token)
-
-        raw_cache = tempfile.mkdtemp(prefix="hf_raw_")
-        inf_cache = tempfile.mkdtemp(prefix="hf_inf_")
-
-        raw = load_dataset(
-            self.raw_xml_repo,
-            token=self.token,
-            revision=raw_info.sha,
-            cache_dir=raw_cache,
-        )
-
-        inf = load_dataset(
+        inf_root = snapshot_download(
             self.inference_repo,
-            token=self.token,
+            repo_type="dataset",
             revision=inf_info.sha,
-            cache_dir=inf_cache,
+            token=self.token,
         )
 
-        self.raw_dataset = self._extract_default(raw)
-        self.inference_dataset = self._extract_default(inf)
+        inf_parquets = list(Path(inf_root).rglob("*.parquet"))
+        inf_ds = load_dataset("parquet", data_files=[str(p) for p in inf_parquets])["train"]
+        lookup = self._build_lookup(inf_ds.to_pandas())
 
-    def detect_inference_column(self):
-        """Automatically find the column starting with 'inference_'."""
-        cols = self.inference_dataset.column_names
-        infer_cols = [c for c in cols if c.startswith("inference_")]
+        # --------------------------------------------------
+        # 2. Snapshot raw XML repo
+        # --------------------------------------------------
+        raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
+        raw_root = snapshot_download(
+            self.raw_xml_repo,
+            repo_type="dataset",
+            revision=raw_info.sha,
+            token=self.token,
+        )
 
-        if not infer_cols:
-            raise ValueError(
-                f"No inference column found in inference dataset. "
-                f"Expected columns starting with 'inference_'. Found: {cols}"
+        raw_root = Path(raw_root)
+        raw_parquets = list(raw_root.rglob("*.parquet"))
+
+        ops: list[CommitOperationAdd] = []
+
+        # --------------------------------------------------
+        # 3. Update parquet files in place
+        # --------------------------------------------------
+        new_feature_cols = set()
+
+        for parquet_path in raw_parquets:
+            df = pd.read_parquet(parquet_path)
+
+            df, created_cols = self._update_df(df, lookup)
+            new_feature_cols |= set(created_cols)
+
+            df.to_parquet(parquet_path, index=False)
+
+            ops.append(
+                CommitOperationAdd(
+                    path_in_repo=str(parquet_path.relative_to(raw_root)),
+                    path_or_fileobj=str(parquet_path),
+                )
             )
-        if len(infer_cols) > 1:
-            return infer_cols[0]
 
-        return infer_cols[0]
+        # --------------------------------------------------
+        # 4. README handling (copy + modify)
+        # --------------------------------------------------
+        readme_path = raw_root / "README.md"
+        if readme_path.exists():
+            text = readme_path.read_text(encoding="utf-8")
 
-    def build_inference_lookup(self):
-        """Uses auto-detected inference column."""
-        inference_column = self.detect_inference_column()
+            edited = (
+                HuggingFaceReadmeEditor(text)
+                .add_features(list(new_feature_cols))
+                .rewrite_title(target_repo)
+                .rewrite_usage_repo_ids(target_repo)
+                .replace_repo_name(self.raw_xml_repo, target_repo)
+                .render()
+            )
 
-        df = self.inference_dataset.to_pandas()
+            ops.append(
+                CommitOperationAdd(
+                    path_in_repo="README.md",
+                    path_or_fileobj=edited.encode("utf-8"),
+                )
+            )
+
+        # --------------------------------------------------
+        # 5. Ensure repo exists
+        # --------------------------------------------------
+        api.create_repo(
+            repo_id=target_repo,
+            repo_type="dataset",
+            private=True,
+            exist_ok=True,
+            token=self.token,
+        )
+
+        # --------------------------------------------------
+        # 6. Single commit
+        # --------------------------------------------------
+        api.create_commit(
+            repo_id=target_repo,
+            repo_type="dataset",
+            operations=ops,
+            commit_message="Write inference into raw XML.",
+            token=self.token,
+        )
+
+    # ------------------------------------------------------------
+    # HELPERS
+    # ------------------------------------------------------------
+    def _build_lookup(self, df: pd.DataFrame) -> dict:
+        inference_col = [c for c in df.columns if c.startswith("inference_")][0]
+
         lookup = {}
-
-        for _, row in df.iterrows():
-            filename = row["filename"]
-            line_id = row["line_id"]
-            text = row[inference_column]
-
-            lookup.setdefault(filename, {})[line_id] = text
-
+        for _, r in df.iterrows():
+            lookup.setdefault(r["project_name"], {}) \
+                  .setdefault(r["filename"], {})[r["line_id"]] = r[inference_col]
         return lookup
 
-    def update_raw_xml_dataset(self, lookup: dict):
-        df = self.raw_dataset.to_pandas()
+    def _update_df(self, df: pd.DataFrame, lookup: dict):
         new_col = f"inference_xml_{pd.Timestamp.now().strftime('%Y%m%d')}"
         df[new_col] = ""
 
-        updated = 0
+        updated = False
 
-        for idx, row in df.iterrows():
-            filename = row["filename"]
-            raw_xml = row["xml"]
+        for i, r in df.iterrows():
+            proj = r["project_name"]
+            fn = r["filename"]
 
-            if filename not in lookup:
+            if proj not in lookup or fn not in lookup[proj]:
                 continue
 
-            xp = XMLProcessor.from_string(raw_xml)
-            xp.insert_inferred_lines(xp.root, lookup[filename])
-            updated_xml = xp.tree_to_string()
+            xp = XMLProcessor.from_string(r["xml_content"])
+            xp.insert_inferred_lines(xp.root, lookup[proj][fn])
+            df.at[i, new_col] = xp.tree_to_string()
+            updated = True
 
-            df.at[idx, new_col] = updated_xml
-            updated += 1
-
-        print(f"Updated {updated} XML records.")
-        return df
-
-    def upload_updated_dataset(self, df, repo_id: str):
-        api = HfApi()
-
-        try:
-            api.repo_info(repo_id, repo_type="dataset", token=self.token)
-        except HfHubHTTPError:
-            api.create_repo(
-                repo_id=repo_id,
-                repo_type="dataset",
-                private=True,
-                token=self.token
-            )
-
-        dataset = Dataset.from_pandas(df)
-        dataset.push_to_hub(repo_id, token=self.token)
+        return df, ([new_col] if updated else [])
