@@ -7,10 +7,9 @@ from typing import Dict, List, Optional, Iterable, Set, Union
 import pandas as pd
 from datasets import Dataset, DatasetDict, Split, load_dataset
 from datasets.exceptions import DatasetNotFoundError
+from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 from flow_inference.utils.logging.inference_logger import logger
-from huggingface_hub import HfApi, snapshot_download
-from huggingface_hub._commit_api import CommitOperationAdd
-from flow_inference.configure_dataset_card import HuggingFaceReadmeEditor
+from huggingface_hub import CommitOperationAdd, HfApi, snapshot_download
 
 
 # ===============================================================================
@@ -73,10 +72,10 @@ class HuggingFaceDataHandler:
         return len(paths) > 0
 
     # --------------------------------------------------------------------------
-    # SNAPSHOT DOWNLOAD HELPERS
+    # DOWNLOAD HELPERS
     # --------------------------------------------------------------------------
     def _build_allow_patterns(self) -> list[str]:
-        patterns = ["README.md"]
+        patterns: list[str] = []
 
         if self.auto_split:
             patterns.append("data/**/*.parquet")
@@ -97,6 +96,9 @@ class HuggingFaceDataHandler:
         if not self.cache_dir:
             self.cache_dir = tempfile.mkdtemp(prefix="hf_ds_")
 
+        if self._resolved_sha is None:
+            raise RuntimeError("Missing resolved dataset revision SHA.")
+
         local_root = Path(self.cache_dir) / self._resolved_sha / "snapshot"
         local_root.mkdir(parents=True, exist_ok=True)
 
@@ -113,9 +115,10 @@ class HuggingFaceDataHandler:
         return local_root
 
     # --------------------------------------------------------------------------
-    # PARQUET DISCOVERY / SPLIT SELECTION
+    # SPLIT SELECTION
     # --------------------------------------------------------------------------
-    def _discover_parquet_files(self, local_root: Path) -> dict[str, list[Path]]:
+    @staticmethod
+    def _discover_parquet_files(local_root: Path) -> dict[str, list[Path]]:
         return {
             "train": list((local_root / "data" / "train").rglob("*.parquet")),
             "test": list((local_root / "data" / "test").rglob("*.parquet")),
@@ -123,7 +126,7 @@ class HuggingFaceDataHandler:
         }
 
     def _select_parquet_paths(self, found: dict[str, list[Path]]) -> dict[str, list[Path]]:
-        parquet_paths = {}
+        parquet_paths: dict[str, list[Path]] = {}
 
         if self.auto_split:
             if found["train"]:
@@ -154,12 +157,13 @@ class HuggingFaceDataHandler:
         return parquet_paths
 
     # ==========================================================================
-    # DOWNLOAD DATASETS (MAIN)
+    # DOWNLOAD HUGGING FACE DATASETS
     # ==========================================================================
     def download_hf_dataset(self) -> None:
         mode = "AUTO" if self.auto_split else "EXPLICIT"
         logger.info(
-            f"Downloading dataset: {self.dataset_name} | mode={mode} | requested={self.requested_splits or 'AUTO'}"
+            f"Downloading dataset: {self.dataset_name} | mode={mode} | "
+            f"requested={self.requested_splits or 'AUTO'}"
         )
 
         try:
@@ -170,7 +174,10 @@ class HuggingFaceDataHandler:
                 token=self.huggingface_token,
             )
             self._resolved_sha = info.sha
-            logger.info(f"Resolved dataset revision: {self._resolved_sha} (requested: {self.revision})")
+            logger.info(
+                f"Resolved dataset revision: {self._resolved_sha} "
+                f"(requested: {self.revision})"
+            )
 
             allow_patterns = self._build_allow_patterns()
             self._local_root = self._download_snapshot(allow_patterns)
@@ -179,11 +186,14 @@ class HuggingFaceDataHandler:
             parquet_paths = self._select_parquet_paths(found)
 
             data_files = {k: [str(p) for p in v] for k, v in parquet_paths.items()}
-
             hf_dataset = load_dataset("parquet", data_files=data_files)
 
             self.parquet_paths = {k: [str(p) for p in v] for k, v in parquet_paths.items()}
-            self.dataset = hf_dataset if isinstance(hf_dataset, DatasetDict) else DatasetDict({"default": hf_dataset})
+            self.dataset = (
+                hf_dataset
+                if isinstance(hf_dataset, DatasetDict)
+                else DatasetDict({"default": hf_dataset})
+            )
             self.state = "downloaded_all"
 
             logger.info(
@@ -207,7 +217,7 @@ class HuggingFaceDataHandler:
         if self.dataset is None:
             raise RuntimeError("Dataset not loaded. Call download_hf_dataset() first.")
 
-        dfs = {}
+        dfs: Dict[str, pd.DataFrame] = {}
         for split_name in self.dataset.keys():
             logger.info(f"Converting split '{split_name}' to DataFrame...")
             dfs[split_name] = self.dataset[split_name].to_pandas()
@@ -216,7 +226,8 @@ class HuggingFaceDataHandler:
         self.state = "converted"
         return dfs
 
-    def convert_to_list_of_dicts(self, dfs: Dict[str, pd.DataFrame]) -> Dict[str, List[Dict]]:
+    @staticmethod
+    def convert_to_list_of_dicts(dfs: Dict[str, pd.DataFrame]) -> Dict[str, List[Dict]]:
         return {split: df.to_dict(orient="records") for split, df in dfs.items()}
 
     def convert_df_into_hf_dataset(self) -> Dataset:
@@ -225,16 +236,17 @@ class HuggingFaceDataHandler:
         return Dataset.from_pandas(next(iter(self.df.values())), preserve_index=False)
 
     # ==========================================================================
-    # PUSH TO HUB HELPERS
+    # PUSH TO HUGGING FACE HELPERS
     # ==========================================================================
-    def _index_df_by_key(self, df: pd.DataFrame, split: str) -> pd.DataFrame:
-        KEY = ["project_name", "filename", "line_id"]
+    @staticmethod
+    def _index_df_by_key(df: pd.DataFrame, split: str) -> pd.DataFrame:
+        key = ["project_name", "filename", "line_id"]
 
-        for col in KEY:
+        for col in key:
             if col not in df.columns:
                 raise RuntimeError(f"Column '{col}' missing in split '{split}'")
 
-        idx = df.set_index(KEY)
+        idx = df.set_index(key)
 
         if not idx.index.is_unique:
             logger.warning(f"{split}: duplicate keys detected — keeping last")
@@ -242,11 +254,12 @@ class HuggingFaceDataHandler:
 
         return idx
 
-    def _update_parquet_file(self, local_path: Path, split_df: pd.DataFrame) -> Path:
-        KEY = ["project_name", "filename", "line_id"]
+    @staticmethod
+    def _update_parquet_file(local_path: Path, split_df: pd.DataFrame) -> Path:
+        key = ["project_name", "filename", "line_id"]
 
         parquet_df = pd.read_parquet(local_path)
-        parquet_idx = parquet_df.set_index(KEY)
+        parquet_idx = parquet_df.set_index(key)
 
         if not parquet_idx.index.is_unique:
             parquet_idx = parquet_idx[~parquet_idx.index.duplicated(keep="last")]
@@ -266,69 +279,49 @@ class HuggingFaceDataHandler:
         return local_path
 
     def _make_commit_op(self, local_path: Path) -> CommitOperationAdd:
+        if self._local_root is None:
+            raise RuntimeError("Missing local snapshot root.")
+
         hf_path = str(local_path.relative_to(self._local_root)).replace("\\", "/")
         return CommitOperationAdd(path_in_repo=hf_path, path_or_fileobj=str(local_path))
 
-    def _add_readme_commit_op(self, target_repo: str) -> CommitOperationAdd | None:
-        if not self._local_root:
-            return None
+    def _add_generated_readme_commit_op(
+        self,
+        target_repo: str,
+    ) -> CommitOperationAdd:
+        if self.dataset is None:
+            raise RuntimeError("Dataset not loaded.")
+        if self.df is None:
+            raise RuntimeError("Updated DataFrames not available.")
 
-        readme = self._local_root / "README.md"
-        if not readme.exists():
-            logger.info("No README.md found in source repo")
-            return None
-
-        editor = HuggingFaceReadmeEditor(readme.read_text(encoding="utf-8"))
-
-        # collect new columns automatically
-        new_features = [
-            col
-            for df in self.df.values()
-            for col in df.columns
-            if col.startswith("inference_") or col.startswith("inference_xml_")
-        ]
-
-        text = (
-            editor
-            .rewrite_usage_repo_ids(target_repo)
-            .rewrite_title(target_repo)
-            .replace_repo_name(self.dataset_name, target_repo)
-            .add_features(new_features)
-            .render()
+        builder = HuggingFaceReadmeBuilder.from_handler(
+            repo_id=target_repo,
+            dataset=self.dataset,
+            dataframes=self.df,
+            parquet_paths=self.parquet_paths,
+            source_repos=[self.dataset_name],
         )
+
+        text = builder.render()
 
         return CommitOperationAdd(
             path_in_repo="README.md",
             path_or_fileobj=text.encode("utf-8"),
         )
 
-    def _extract_dataset_yaml(self) -> str:
-        """
-        Extracts dataset_info from the loaded dataset and converts it to YAML.
-        """
-        if not self.dataset:
-            return ""
-
-        info = self.dataset.info
-        if not info:
-            return ""
-
-        import yaml
-        return yaml.safe_dump(info.to_dict(), sort_keys=False)
-
     # ==========================================================================
     # PUSH UPDATED DATASET
     # ==========================================================================
     def push_to_hub(
-            self,
-            upload_repo_name: str,
-            private: bool = True,
-            commit_message: str = "Upload updated dataset",
-    ):
+        self,
+        upload_repo_name: str,
+        private: bool = True,
+        commit_message: str = "Upload updated dataset",
+    ) -> None:
         if self.df is None:
             raise RuntimeError("No DataFrames stored. Call to_dataframe() first.")
         if not self.parquet_paths:
-            raise RuntimeError("No parquet file map available")
+            raise RuntimeError("No parquet file map available.")
         if self._local_root is None:
             raise RuntimeError("Missing local snapshot root.")
 
@@ -366,9 +359,11 @@ class HuggingFaceDataHandler:
         # ------------------------------------------------------------------
         # 3) Add README to same commit
         # ------------------------------------------------------------------
-        readme_op = self._add_readme_commit_op(upload_repo_name)
-        if readme_op:
-            operations.append(readme_op)
+        operations.append(
+            self._add_generated_readme_commit_op(
+                target_repo=upload_repo_name,
+            )
+        )
 
         # ------------------------------------------------------------------
         # 4) Single commit (parquet + README)
@@ -387,7 +382,7 @@ class HuggingFaceDataHandler:
     # ==========================================================================
     # SINGLE FILE UPLOAD
     # ==========================================================================
-    def upload_file(self, repo_name: str, target_path: str, content_bytes: bytes):
+    def upload_file(self, repo_name: str, target_path: str, content_bytes: bytes) -> None:
         api = HfApi()
         api.upload_file(
             path_or_fileobj=content_bytes,

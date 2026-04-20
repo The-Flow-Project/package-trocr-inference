@@ -29,7 +29,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df.to_parquet(path, index=False)
 
     # -----------------------------------------------------------------------
-    # MOCK TEST HUGGING FACE DOWNLOAD
+    # UNIT TEST: MOCK HUGGING FACE DOWNLOAD
     # -----------------------------------------------------------------------
     @patch("flow_inference.data_handling.load_dataset")
     @patch("flow_inference.data_handling.snapshot_download")
@@ -49,7 +49,6 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         })
         mock_load_dataset.return_value = fake_splits
 
-        # Make snapshot_download "create" the expected parquet layout inside local_dir
         def _fake_snapshot_download(*args, **kwargs):
             local_dir = Path(kwargs["local_dir"])
             df_train = pd.DataFrame({"line_id": ["a", "b"], "x": [1, 2]})
@@ -65,25 +64,22 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             dataset_name="my-org/my-dataset",
             huggingface_token="TOKEN123",
             revision="main",
-            split=None,  # AUTO mode
+            split=None,
         )
 
         handler.download_hf_dataset()
 
-        # dataset_info must be used to resolve sha
         mock_hfapi.return_value.dataset_info.assert_called_once_with(
             repo_id="my-org/my-dataset",
             revision="main",
             token="TOKEN123",
         )
 
-        # snapshot_download must download ALL parquet so layout can be detected
         self.assertTrue(mock_snapshot_download.called)
         sd_kwargs = mock_snapshot_download.call_args.kwargs
         self.assertIn("data/**/*.parquet", sd_kwargs["allow_patterns"])
-        self.assertIn("README.md", sd_kwargs["allow_patterns"])
+        self.assertNotIn("README.md", sd_kwargs["allow_patterns"])
 
-        # load_dataset should be called with parquet + explicit file lists
         self.assertTrue(mock_load_dataset.called)
         args, kwargs = mock_load_dataset.call_args
         self.assertEqual(args[0], "parquet")
@@ -102,17 +98,15 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertIn("train", handler.parquet_paths)
         self.assertIn("test", handler.parquet_paths)
 
+    # -------------------------------------------------------------
+    # UNIT TEST: DOWNLOAD WITH EXPLICIT SPLIT SELECTION
+    # -------------------------------------------------------------
     @patch("flow_inference.data_handling.load_dataset")
     @patch("flow_inference.data_handling.snapshot_download")
     @patch("flow_inference.data_handling.HfApi")
     def test_download_explicit_train_test(self, mock_hfapi, mock_snapshot_download, mock_load_dataset):
         """
-        EXPLICIT mode: split=["train","test"]
-
-        Must:
-          - snapshot_download only train + test parquet paths
-          - error if either split missing
-          - load_dataset(parquet, data_files={train,test})
+        EXPLICIT mode: split=['train','test']
         """
         fake_info = mock_hfapi.return_value.dataset_info.return_value
         fake_info.sha = "fake_sha_456"
@@ -123,11 +117,8 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         })
         mock_load_dataset.return_value = fake_splits
 
-        # Fake HF download layout
         def _fake_snapshot_download(*args, **kwargs):
             local_dir = Path(kwargs["local_dir"])
-
-            # Must create BOTH train and test because explicit mode demands it
             df_train = pd.DataFrame({"line_id": ["t1", "t2"], "x": [1, 2]})
             df_test = pd.DataFrame({"line_id": ["s1", "s2"], "x": [3, 4]})
 
@@ -141,18 +132,17 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             dataset_name="my-org/my-dataset",
             huggingface_token="TOKEN123",
             revision="main",
-            split=["train", "test"],  # EXPLICIT
+            split=["train", "test"],
         )
 
         handler.download_hf_dataset()
 
-        # snapshot_download must only request train+test parquet
         sd_kwargs = mock_snapshot_download.call_args.kwargs
         self.assertIn("data/train/**/*.parquet", sd_kwargs["allow_patterns"])
         self.assertIn("data/test/**/*.parquet", sd_kwargs["allow_patterns"])
         self.assertNotIn("data/**/*.parquet", sd_kwargs["allow_patterns"])
+        self.assertNotIn("README.md", sd_kwargs["allow_patterns"])
 
-        # load_dataset called correctly
         args, kwargs = mock_load_dataset.call_args
         self.assertEqual(args[0], "parquet")
         self.assertIn("train", kwargs["data_files"])
@@ -162,16 +152,15 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertIn("train", handler.parquet_paths)
         self.assertIn("test", handler.parquet_paths)
 
+    # -------------------------------------------------------------
+    # UNIT TEST: DOWNLOAD WITH TOKEN AND DEFAULT SPLIT
+    # -------------------------------------------------------------
     @patch("flow_inference.data_handling.load_dataset")
     @patch("flow_inference.data_handling.snapshot_download")
     @patch("flow_inference.data_handling.HfApi")
     def test_download_success_with_token(self, mock_hfapi, mock_snapshot_download, mock_load_dataset):
-        """
-        Same as above, but uses self.handler with a token and verifies calls.
-        """
         self.handler.huggingface_token = "hf_ABC123"
         self.handler.revision = "main"
-        # IMPORTANT: set splits explicitly or use default; both are acceptable
         self.handler.requested_splits = {"train", "test", "default"}
 
         fake_info = mock_hfapi.return_value.dataset_info.return_value
@@ -201,7 +190,6 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             token="hf_ABC123",
         )
 
-        # Assert load_dataset called correctly
         args, kwargs = mock_load_dataset.call_args
         self.assertEqual(args[0], "parquet")
         self.assertIn("data_files", kwargs)
@@ -214,12 +202,11 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertIn("test", self.handler.dataset)
 
     # -----------------------------------------------------------------------
-    # INTEGRATION TEST — REAL DATASET
+    # INTEGRATION TEST: DOWNLOAD AND CONVERT REAL DATASET
     # -----------------------------------------------------------------------
     def test_real_hf_dataset_download_and_convert(self):
         """
         Real integration: downloads actual dataset and converts to DataFrames.
-
         Skips if env vars are missing.
         """
         if not self.hf_token_read or not self.hf_download_repo_name:
@@ -228,11 +215,11 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         handler = HuggingFaceDataHandler(
             dataset_name=self.hf_download_repo_name,
             huggingface_token=self.hf_token_read,
-            split=None,  # auto (train/test/default as available)
+            split=None,
         )
 
         handler.download_hf_dataset()
-        self.assertIn(handler.state, {"downloaded_all", "downloaded_default"})
+        self.assertEqual(handler.state, "downloaded_all")
         self.assertIsNotNone(handler.dataset)
 
         dfs = handler.to_dataframe()
@@ -245,22 +232,21 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertGreater(len(dicts), 0)
 
     # -----------------------------------------------------------------------
-    # UNIT TEST — PUSH TO HUB (structure-preserving commit)
+    # UNIT TEST: PUSH TO HUB
     # -----------------------------------------------------------------------
     @patch("flow_inference.data_handling.HfApi")
     def test_push_to_hub(self, mock_hfapi):
         """
-        Tests the new push_to_hub:
-        - computes repo path relative to local snapshot root (preserves structure)
-        - uses HfApi.create_commit with CommitOperationAdd operations
+        Tests push_to_hub:
+        - updates parquet files in place
+        - preserves relative repo paths
+        - adds generated README.md to commit
         """
-        # Create a local snapshot tree
         tmp_root = Path(tempfile.mkdtemp(prefix="hf_test_snapshot_"))
         local_root = tmp_root / "snapshot"
         (local_root / "data/train/docA").mkdir(parents=True, exist_ok=True)
         (local_root / "data/test/docB").mkdir(parents=True, exist_ok=True)
 
-        # Base parquet contents (before inference)
         train_path = local_root / "data/train/docA/train_file.parquet"
         test_path = local_root / "data/test/docB/test_file.parquet"
 
@@ -280,7 +266,6 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self._write_parquet(train_path, df_train_orig)
         self._write_parquet(test_path, df_test_orig)
 
-        # Handler prepared as if download_hf_dataset() had already run
         handler = HuggingFaceDataHandler(
             dataset_name="fake/repo",
             huggingface_token="WRITE_TOKEN",
@@ -292,7 +277,11 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             "test": [str(test_path)],
         }
 
-        # Inference results in df (note: only some keys updated)
+        handler.dataset = DatasetDict({
+            "train": Dataset.from_pandas(df_train_orig, preserve_index=False),
+            "test": Dataset.from_pandas(df_test_orig, preserve_index=False),
+        })
+
         handler.df = {
             "train": pd.DataFrame({
                 "project_name": ["docA", "docA"],
@@ -312,26 +301,22 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         handler.push_to_hub(
             upload_repo_name="fake/upload",
-            commit_message="Unit test commit"
+            commit_message="Unit test commit",
         )
 
-        # Verify parquet files were updated correctly in-place
         updated_train = pd.read_parquet(train_path).set_index("line_id")
         updated_test = pd.read_parquet(test_path).set_index("line_id")
 
-        # L1 untouched, L2 & L3 updated
         self.assertEqual(updated_train.loc["L1", "text"], "")
         self.assertEqual(updated_train.loc["L2", "text"], "hello")
         self.assertEqual(updated_train.loc["L3", "text"], "world")
         self.assertEqual(updated_train.loc["L2", "inference_col"], "pred2")
         self.assertEqual(updated_train.loc["L3", "inference_col"], "pred3")
 
-        # T2/T3 untouched, T1 updated
         self.assertEqual(updated_test.loc["T2", "text"], "")
         self.assertEqual(updated_test.loc["T1", "text"], "test-hi")
         self.assertEqual(updated_test.loc["T1", "inference_col"], "predT1")
 
-        # Verify create_commit called with structure-preserving paths
         mock_hfapi.return_value.create_commit.assert_called_once()
         cc_kwargs = mock_hfapi.return_value.create_commit.call_args.kwargs
 
@@ -341,52 +326,70 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertEqual(cc_kwargs["token"], "WRITE_TOKEN")
 
         ops = cc_kwargs["operations"]
-        # Extract path_in_repo from CommitOperationAdd objects
         paths_in_repo = sorted([op.path_in_repo for op in ops])
 
         self.assertIn("data/train/docA/train_file.parquet", paths_in_repo)
         self.assertIn("data/test/docB/test_file.parquet", paths_in_repo)
+        self.assertIn("README.md", paths_in_repo)
 
         self.assertEqual(handler.state, "pushed")
 
+    # -------------------------------------------------------------
+    # UNIT TEST: README GENERATION
+    # -------------------------------------------------------------
     @patch("flow_inference.data_handling.HfApi")
-    def test_readme_is_copied_and_rewritten(self, mock_hfapi):
+    def test_generated_readme_is_added_to_commit(self, mock_hfapi):
         tmp_root = Path(tempfile.mkdtemp())
         snapshot = tmp_root / "snapshot"
-        snapshot.mkdir(parents=True)
+        (snapshot / "data/train/docA").mkdir(parents=True, exist_ok=True)
 
-        readme = snapshot / "README.md"
-        readme.write_text(
-            'from datasets import load_dataset\n'
-            'dataset = load_dataset("old/repo")\n',
-            encoding="utf-8"
-        )
+        parquet_path = snapshot / "data/train/docA/train_file.parquet"
+        df_orig = pd.DataFrame({
+            "project_name": ["docA"],
+            "filename": ["train_file"],
+            "line_id": ["L1"],
+            "text": [""],
+        })
+        self._write_parquet(parquet_path, df_orig)
 
         handler = HuggingFaceDataHandler(
             dataset_name="old/repo",
-            huggingface_token="TOKEN"
+            huggingface_token="TOKEN",
         )
         handler._local_root = snapshot
-        handler.df = {"train": pd.DataFrame(columns=["project_name","filename","line_id"])}
-        handler.parquet_paths = {}
-        handler.state = "converted"
+        handler.parquet_paths = {"train": [str(parquet_path)]}
+        handler.dataset = DatasetDict({
+            "train": Dataset.from_pandas(df_orig, preserve_index=False)
+        })
+        handler.df = {
+            "train": pd.DataFrame({
+                "project_name": ["docA"],
+                "filename": ["train_file"],
+                "line_id": ["L1"],
+                "text": ["updated"],
+                "inference_col": ["pred"],
+            })
+        }
 
-        handler.parquet_paths = {"train": []}
-        handler.df = {"train": pd.DataFrame({
-            "project_name": [],
-            "filename": [],
-            "line_id": [],
-        })}
         handler.push_to_hub("new/repo")
 
         ops = mock_hfapi.return_value.create_commit.call_args.kwargs["operations"]
-
         readme_ops = [op for op in ops if op.path_in_repo == "README.md"]
+
         self.assertEqual(len(readme_ops), 1)
 
-        content = readme_ops[0].path_or_fileobj.decode()
-        self.assertIn('load_dataset("new/repo")', content)
+        content = readme_ops[0].path_or_fileobj.decode("utf-8")
+        self.assertIn("# Dataset Card for repo", content)
+        self.assertIn('dataset = load_dataset("new/repo")', content)
+        self.assertIn('dataset_split = load_dataset("new/repo", split="train")', content)
+        self.assertIn("- Number of augmentations: 2", content)
+        self.assertIn("### Projects Included", content)
+        self.assertIn("docA", content)
+        self.assertIn("inference_col", content)
 
+    # -------------------------------------------------------------
+    # UNIT TEST: INDEXING AND DEDUPLICATION
+    # -------------------------------------------------------------
     def test_index_df_by_composite_key_deduplicates(self):
         df = pd.DataFrame({
             "project_name": ["p", "p"],
@@ -401,6 +404,9 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertEqual(len(idx), 1)
         self.assertEqual(idx.iloc[0]["text"], "new")
 
+    # -------------------------------------------------------------
+    # UNIT TEST: SELECTED SPLIT UPDATE
+    # -------------------------------------------------------------
     def test_only_selected_split_is_updated(self):
         handler = HuggingFaceDataHandler("x/y", split=["train"])
 
@@ -420,6 +426,189 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         self.assertIn("train", handler.df)
         self.assertNotIn("test", handler.df)
+
+    # -------------------------------------------------------------
+    # INTEGRATION TEST: REAL PUSH TO HUB
+    # -------------------------------------------------------------
+    def test_real_push_to_hub(self):
+        """
+        Real integration test:
+        - downloads a real dataset
+        - writes a few visible test inference values into a new inference column
+        - pushes updated parquet + generated README to the HF test repo
+        - verifies that the inference column exists and contains non-empty values
+
+        Skips if env vars are missing.
+        """
+        if (
+                not self.hf_token_read
+                or not self.write_token
+                or not self.hf_download_repo_name
+                or not self.test_repo
+        ):
+            self.skipTest("Missing Hugging Face credentials.")
+
+        handler = HuggingFaceDataHandler(
+            dataset_name=self.hf_download_repo_name,
+            huggingface_token=self.write_token,
+            split=["train"],  # keep runtime and repo changes smaller
+        )
+
+        handler.download_hf_dataset()
+        self.assertEqual(handler.state, "downloaded_all")
+        self.assertIsNotNone(handler.dataset)
+
+        dfs = handler.to_dataframe()
+        self.assertGreater(len(dfs), 0)
+
+        updated_dfs = {}
+
+        for split_name, df in dfs.items():
+            df = df.copy()
+            self.assertFalse(df.empty)
+
+            for required in ["project_name", "filename", "line_id"]:
+                self.assertIn(required, df.columns)
+
+            inference_col = "inference_test"
+
+            df[inference_col] = ""
+            for i in range(min(3, len(df))):
+                df.iloc[i, df.columns.get_loc(inference_col)] = f"test line {i + 1}"
+
+            updated_dfs[split_name] = df
+
+        handler.df = updated_dfs
+
+        handler.push_to_hub(
+            upload_repo_name=self.test_repo,
+            private=True,
+            commit_message="Integration test upload with fake inference",
+        )
+
+        self.assertEqual(handler.state, "pushed")
+
+        # Verify local updated dfs first
+        found_inference_column = False
+        found_non_empty_prediction = False
+
+        for split_name, df in updated_dfs.items():
+            inference_cols = [col for col in df.columns if col.startswith("inference_")]
+            if inference_cols:
+                found_inference_column = True
+
+            for col in inference_cols:
+                non_empty = df[col].fillna("").astype(str).str.strip().ne("")
+                if non_empty.any():
+                    found_non_empty_prediction = True
+                    break
+
+        self.assertTrue(found_inference_column, "No inference column was created.")
+        self.assertTrue(
+            found_non_empty_prediction,
+            "Inference column exists but contains no values."
+        )
+
+        # Verify pushed repo by downloading again
+        verify_handler = HuggingFaceDataHandler(
+            dataset_name=self.test_repo,
+            huggingface_token=self.hf_token_read,
+            split=["train"],
+        )
+        verify_handler.download_hf_dataset()
+        verify_dfs = verify_handler.to_dataframe()
+
+        pushed_inference_column = False
+        pushed_non_empty_prediction = False
+        found_test_lines = set()
+
+        for split_name, df in verify_dfs.items():
+            inference_cols = [col for col in df.columns if col.startswith("inference_")]
+            if inference_cols:
+                pushed_inference_column = True
+
+            for col in inference_cols:
+                values = df[col].fillna("").astype(str).str.strip()
+                non_empty = values.ne("")
+                if non_empty.any():
+                    pushed_non_empty_prediction = True
+
+                for expected in ["test line 1", "test line 2", "test line 3"]:
+                    if values.eq(expected).any():
+                        found_test_lines.add(expected)
+
+        self.assertTrue(
+            pushed_inference_column,
+            "No inference column found in pushed dataset."
+        )
+        self.assertTrue(
+            pushed_non_empty_prediction,
+            "Pushed inference column contains no values."
+        )
+        self.assertTrue(
+            len(found_test_lines) >= 1,
+            "Did not find any expected test inference values in pushed dataset."
+        )
+
+    # -------------------------------------------------------------
+    # INTEGRATION TEST: README GENERATION ON REAL PUSH
+    # -------------------------------------------------------------
+    def test_real_push_generates_readme(self):
+        """
+        Real integration test:
+        - downloads a real dataset
+        - adds a new inference column
+        - pushes to test repo
+        - verifies the pushed repo contains the new column
+
+        Skips if env vars are missing.
+        """
+        if (
+                not self.hf_token_read
+                or not self.write_token
+                or not self.hf_download_repo_name
+                or not self.test_repo
+        ):
+            self.skipTest("Missing Hugging Face credentials.")
+
+        handler = HuggingFaceDataHandler(
+            dataset_name=self.hf_download_repo_name,
+            huggingface_token=self.write_token,
+            split=None,
+        )
+
+        handler.download_hf_dataset()
+        dfs = handler.to_dataframe()
+
+        first_split = next(iter(dfs.keys()))
+        df = dfs[first_split].copy()
+
+        for required in ["project_name", "filename", "line_id"]:
+            self.assertIn(required, df.columns)
+
+        df["integration_test_inference_col"] = ""
+        df.loc[df.index[:1], "integration_test_inference_col"] = "pred"
+        dfs[first_split] = df
+        handler.df = dfs
+
+        handler.push_to_hub(
+            upload_repo_name=self.test_repo,
+            private=True,
+            commit_message="Integration test upload with generated README",
+        )
+
+        self.assertEqual(handler.state, "pushed")
+
+        verify_handler = HuggingFaceDataHandler(
+            dataset_name=self.test_repo,
+            huggingface_token=self.hf_token_read,
+            split=None,
+        )
+        verify_handler.download_hf_dataset()
+        verify_dfs = verify_handler.to_dataframe()
+
+        self.assertIn(first_split, verify_dfs)
+        self.assertIn("integration_test_inference_col", verify_dfs[first_split].columns)
 
 
 if __name__ == "__main__":
