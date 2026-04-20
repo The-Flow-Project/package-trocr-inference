@@ -6,22 +6,23 @@ from evaluate import load
 from flow_inference.data_handling import HuggingFaceDataHandler
 from flow_inference.status import Status
 from flow_inference.utils.logging.inference_logger import logger
+from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 
 
 class Evaluation:
     def __init__(
         self,
-        download_repo_name: str,
+        evaluation_repo_name: str,
         hf_token: Optional[str],
         splits: Optional[List[str]] = None,
     ):
-        self.download_repo_name = download_repo_name
+        self.download_repo_name = evaluation_repo_name
         self.hf_token = hf_token
         self.splits = splits
         self.statusManager = Status()
 
         self.data_handler = HuggingFaceDataHandler(
-            dataset_name=download_repo_name,
+            dataset_name=evaluation_repo_name,
             huggingface_token=hf_token
         )
 
@@ -57,7 +58,8 @@ class Evaluation:
     # --------------------------------------------------------------------------
     # GROUND TRUTH EXTRACTION
     # --------------------------------------------------------------------------
-    def _extract_ground_truth(self, df: pd.DataFrame) -> List[str]:
+    @staticmethod
+    def _extract_ground_truth(df: pd.DataFrame) -> List[str]:
         if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
         return df["text"].fillna("").astype(str).tolist()
@@ -65,7 +67,8 @@ class Evaluation:
     # --------------------------------------------------------------------------
     # INFERENCE COLUMN SELECTION
     # --------------------------------------------------------------------------
-    def _find_latest_inference_column(self, df: pd.DataFrame) -> str:
+    @staticmethod
+    def _find_latest_inference_column(df: pd.DataFrame) -> str:
         cols = [col for col in df.columns if col.startswith("inference_")]
         if not cols:
             raise ValueError("No inference column found.")
@@ -83,12 +86,14 @@ class Evaluation:
         logger.info(f"Using latest inference column: {latest_col}")
         return latest_col
 
-    def _extract_hypothesis(self, df: pd.DataFrame, column: str) -> List[str]:
+    @staticmethod
+    def _extract_hypothesis(df: pd.DataFrame, column: str) -> List[str]:
         if column not in df.columns:
             raise ValueError(f"Hypothesis column '{column}' not found.")
         return df[column].fillna("").astype(str).tolist()
 
-    def _filter_eval_rows(self, df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
+    @staticmethod
+    def _filter_eval_rows(df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
         """
         Keep only rows where both GT and prediction exist.
         """
@@ -115,7 +120,8 @@ class Evaluation:
     # --------------------------------------------------------------------------
     # CER CALCULATION
     # --------------------------------------------------------------------------
-    def compute_cer(self, gt: List[str], hyp: List[str]) -> float:
+    @staticmethod
+    def compute_cer(gt: List[str], hyp: List[str]) -> float:
         cer = load("cer")
         cer.add_batch(predictions=hyp, references=gt)
         return cer.compute()
@@ -124,14 +130,15 @@ class Evaluation:
     # OUTPUT CREATION
     # --------------------------------------------------------------------------
     def create_output_files(
-        self,
-        groundtruth: List[str],
-        hypothesis: List[str],
-        cer_score: float
+            self,
+            groundtruth: List[str],
+            hypothesis: List[str],
+            cer_score: float,
+            timestamp: str,
     ) -> Dict[str, bytes]:
 
         report = {
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": timestamp,
             "repo_name": self.download_repo_name,
             "gt_lines": len(groundtruth),
             "hypothesis_lines": len(hypothesis),
@@ -148,13 +155,59 @@ class Evaluation:
     # --------------------------------------------------------------------------
     # UPLOAD FILES
     # --------------------------------------------------------------------------
-    def upload_results(self, files: Dict[str, bytes]) -> None:
-        for fname, content in files.items():
+    def upload_results(self, files: Dict[str, bytes], timestamp: str) -> str:
+        evaluation_path = f"evaluation/{timestamp}/"
+
+        for file_name, content in files.items():
             self.data_handler.upload_file(
                 repo_name=self.download_repo_name,
-                target_path=f"evaluation/{fname}",
+                target_path=f"{evaluation_path}{file_name}",
                 content_bytes=content
             )
+
+        return evaluation_path
+
+    def upload_readme(
+            self,
+            dfs: Dict[str, pd.DataFrame],
+            inference_col: str,
+            cer_score: float,
+            eval_rows: int,
+            timestamp: str,
+            evaluation_path: str,
+    ) -> None:
+        if self.data_handler.dataset is None:
+            raise RuntimeError("Dataset metadata not loaded.")
+        if not self.data_handler.parquet_paths:
+            raise RuntimeError("Parquet paths not available.")
+
+        evaluated_split = ",".join(self.splits) if self.splits else ("test" if "test" in dfs else "train")
+
+        evaluation_info = {
+            "timestamp": timestamp,
+            "cer": cer_score,
+            "eval_rows": eval_rows,
+            "gt_lines": eval_rows,
+            "hypothesis_lines": eval_rows,
+            "evaluated_split": evaluated_split,
+            "inference_column": inference_col,
+            "evaluation_path": evaluation_path,
+        }
+
+        builder = HuggingFaceReadmeBuilder.from_handler(
+            repo_id=self.download_repo_name,
+            dataset=self.data_handler.dataset,
+            dataframes=dfs,
+            parquet_paths=self.data_handler.parquet_paths,
+            source_repos=[self.download_repo_name],
+            evaluation_info=evaluation_info,
+        )
+
+        self.data_handler.upload_file(
+            repo_name=self.download_repo_name,
+            target_path="README.md",
+            content_bytes=builder.render().encode("utf-8"),
+        )
 
     # --------------------------------------------------------------------------
     # MAIN EVALUATION PIPELINE
@@ -174,22 +227,39 @@ class Evaluation:
         # 4) Filter rows to only those that have BOTH GT and prediction
         df_eval = self._filter_eval_rows(df, inference_col)
 
-        # 5) Extract ground truth (from filtered rows)
+        # 5) Extract ground truth
         groundtruth = self._extract_ground_truth(df_eval)
 
-        # 6) Extract hypothesis (from filtered rows)
+        # 6) Extract hypothesis
         hypothesis = self._extract_hypothesis(df_eval, inference_col)
 
         # 7) Calculate CER
         cer_score = self.compute_cer(groundtruth, hypothesis)
         logger.info(f"CER = {cer_score}")
 
-        # 8) Build output files (in memory)
-        files = self.create_output_files(groundtruth, hypothesis, cer_score)
+        # 8) Create one shared timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
-        # 9) Upload results
-        self.upload_results(files)
+        # 9) Build output files
+        files = self.create_output_files(
+            groundtruth=groundtruth,
+            hypothesis=hypothesis,
+            cer_score=cer_score,
+            timestamp=timestamp,
+        )
+
+        # 10) Upload evaluation artifacts
+        evaluation_path = self.upload_results(files, timestamp.replace(":", "_"))
+
+        # 11) Regenerate and upload README
+        self.upload_readme(
+            dfs=dfs,
+            inference_col=inference_col,
+            cer_score=cer_score,
+            eval_rows=len(df_eval),
+            timestamp=timestamp,
+            evaluation_path=evaluation_path,
+        )
 
         logger.info("Completed and uploaded evaluation results.")
-
         return files
