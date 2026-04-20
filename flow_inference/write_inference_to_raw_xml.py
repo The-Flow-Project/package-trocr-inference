@@ -1,12 +1,9 @@
-import tempfile
 from pathlib import Path
 import pandas as pd
-from huggingface_hub import HfApi, snapshot_download
-from huggingface_hub._commit_api import CommitOperationAdd
-from datasets import load_dataset
-from huggingface_hub.errors import HfHubHTTPError
+from huggingface_hub import HfApi, snapshot_download, CommitOperationAdd
+from datasets import load_dataset, DatasetDict
 from flow_inference.xml_processing import XMLProcessor
-from flow_inference.configure_dataset_card import HuggingFaceReadmeEditor
+from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 
 
 class InferenceToRawXMLWriter:
@@ -57,45 +54,71 @@ class InferenceToRawXMLWriter:
         # --------------------------------------------------
         # 3. Update parquet files in place
         # --------------------------------------------------
-        new_feature_cols = set()
+        updated_frames_by_split: dict[str, list[pd.DataFrame]] = {}
+        parquet_paths_by_split: dict[str, list[str]] = {}
+        new_xml_column = self._build_inference_xml_column_name()
 
         for parquet_path in raw_parquets:
             df = pd.read_parquet(parquet_path)
 
-            df, created_cols = self._update_df(df, lookup)
-            new_feature_cols |= set(created_cols)
-
+            df, _ = self._update_df(df, lookup, new_xml_column)
             df.to_parquet(parquet_path, index=False)
+
+            rel_path = parquet_path.relative_to(raw_root)
+            parts = rel_path.parts
+
+            if len(parts) >= 3 and parts[0] == "data" and parts[1] in {"train", "test"}:
+                split_name = parts[1]
+            else:
+                split_name = "default"
+
+            updated_frames_by_split.setdefault(split_name, []).append(df)
+            parquet_paths_by_split.setdefault(split_name, []).append(str(parquet_path))
 
             ops.append(
                 CommitOperationAdd(
-                    path_in_repo=str(parquet_path.relative_to(raw_root)),
+                    path_in_repo=str(rel_path).replace("\\", "/"),
                     path_or_fileobj=str(parquet_path),
                 )
             )
 
         # --------------------------------------------------
-        # 4. README handling (copy + modify)
+        # 4. README handling (generate fresh)
         # --------------------------------------------------
-        readme_path = raw_root / "README.md"
-        if readme_path.exists():
-            text = readme_path.read_text(encoding="utf-8")
+        combined_dfs = {
+            split_name: pd.concat(frames, ignore_index=True)
+            for split_name, frames in updated_frames_by_split.items()
+        }
 
-            edited = (
-                HuggingFaceReadmeEditor(text)
-                .add_features(list(new_feature_cols))
-                .rewrite_title(target_repo)
-                .rewrite_usage_repo_ids(target_repo)
-                .replace_repo_name(self.raw_xml_repo, target_repo)
-                .render()
-            )
+        raw_dataset = load_dataset(
+            "parquet",
+            data_files=parquet_paths_by_split,
+        )
 
-            ops.append(
-                CommitOperationAdd(
-                    path_in_repo="README.md",
-                    path_or_fileobj=edited.encode("utf-8"),
-                )
+        if not isinstance(raw_dataset, DatasetDict):
+            raw_dataset = DatasetDict({"default": raw_dataset})
+
+        builder = HuggingFaceReadmeBuilder(
+            repo_id=target_repo,
+            dataset=raw_dataset,
+            dataframes=combined_dfs,
+            parquet_paths=parquet_paths_by_split,
+            source_repos=[self.raw_xml_repo, self.inference_repo],
+            description_text=(
+                f"This dataset is derived from "
+                f"[{self.raw_xml_repo}](https://huggingface.co/datasets/{self.raw_xml_repo}) "
+                f"and enriched with raw XML inference derived from "
+                f"[{self.inference_repo}](https://huggingface.co/datasets/{self.inference_repo})."
+            ),
+            tags=["xml", "pagexml", "inference", "htr"],
+        )
+
+        ops.append(
+            CommitOperationAdd(
+                path_in_repo="README.md",
+                path_or_fileobj=builder.render().encode("utf-8"),
             )
+        )
 
         # --------------------------------------------------
         # 5. Ensure repo exists
@@ -122,7 +145,13 @@ class InferenceToRawXMLWriter:
     # ------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------
-    def _build_lookup(self, df: pd.DataFrame) -> dict:
+    def _build_inference_xml_column_name(self) -> str:
+        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S_%f")
+        repo_name = self.inference_repo.split("/")[-1].replace("-", "_").replace("/", "_")
+        return f"inference_xml_{timestamp}_from_{repo_name}"
+
+    @staticmethod
+    def _build_lookup(df: pd.DataFrame) -> dict:
         inference_col = [c for c in df.columns if c.startswith("inference_")][0]
 
         lookup = {}
@@ -131,8 +160,8 @@ class InferenceToRawXMLWriter:
                   .setdefault(r["filename"], {})[r["line_id"]] = r[inference_col]
         return lookup
 
-    def _update_df(self, df: pd.DataFrame, lookup: dict):
-        new_col = f"inference_xml_{pd.Timestamp.now().strftime('%Y%m%d')}"
+    @staticmethod
+    def _update_df(df: pd.DataFrame, lookup: dict, new_col: str):
         df[new_col] = ""
 
         updated = False
