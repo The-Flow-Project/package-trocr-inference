@@ -2,7 +2,7 @@
 # IMPORT STATEMENTS
 # ===============================================================================
 from datetime import datetime
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, cast
 from flow_inference.data_handling import HuggingFaceDataHandler
 from flow_inference.image_processing import ImageHandler
 from flow_inference.model_handling import ModelManager
@@ -195,8 +195,9 @@ class Inference:
 
         updated_df = original_df.copy()
 
-        timestamp = datetime.now().isoformat(timespec="seconds").replace(":", "-")
-        new_col = f"inference_{timestamp}_model_{self.trocr_model}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        model_name = self.trocr_model.replace("/", "_")
+        new_col = f"inference_{timestamp}_model_{model_name}"
 
         updated_df[new_col] = ""
         updated_df[new_col] = updated_df[new_col].astype("string")
@@ -204,13 +205,14 @@ class Inference:
         updated_count = 0
 
         for (project, filename, line_id), text in inferred_lines.items():
-            mask = (
-                    (updated_df["project_name"] == project) &
-                    (updated_df["filename"] == filename) &
-                    (updated_df["line_id"] == line_id)
+            mask = cast(
+                pd.Series,
+                (updated_df["project_name"] == project)
+                & (updated_df["filename"] == filename)
+                & (updated_df["line_id"] == line_id)
             )
 
-            if mask.any():
+            if bool(mask.any()):
                 updated_df.loc[mask, new_col] = text
                 updated_count += int(mask.sum())
             else:
@@ -229,7 +231,6 @@ class Inference:
         logger.info("Saving inference results into DataFrame and updating XML fields.")
 
         try:
-            # write inference column
             df_with_inference = self.write_inference_to_dataframe(inferred_lines, original_df)
 
             logger.info("Inference results successfully written to DataFrame.")
