@@ -1,7 +1,6 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
-import os
 import time
 from typing import List, Union, Dict
 import torch
@@ -144,6 +143,7 @@ class InferenceHandler:
         """
         max_new_tokens = kwargs.get('max_new_tokens', 100)
         batch_size = kwargs.get('batch_size', 8)
+        num_workers = kwargs.get("num_workers", 0)
 
         if not records:
             logger.error("No file names provided for inference.")
@@ -162,10 +162,6 @@ class InferenceHandler:
             )
 
             logger.info(f"Number of lines to infer: {len(inference_dataset)}")
-            if self.device.type == "cuda":
-                num_workers = 0
-            else:
-                num_workers = min(4, os.cpu_count() or 1)
 
             inference_dataloader = DataLoader(
                 inference_dataset,

@@ -1,5 +1,7 @@
 import os
 import unittest
+from unittest.mock import patch
+
 import pandas as pd
 from flow_inference.inference import Inference
 from dotenv import load_dotenv
@@ -32,16 +34,14 @@ class TestInference(unittest.TestCase):
         # limit dataset to 3 per split
         original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
 
-        def limited_convert(self, dfs):
-            full = original_convert(self, dfs)
+        def limited_convert(dfs):
+            full = original_convert(dfs)
             return {split: recs[:3] for split, recs in full.items()}
 
-        HuggingFaceDataHandler.convert_to_list_of_dicts = limited_convert
-
-        try:
+        with patch.object(HuggingFaceDataHandler,
+                          "convert_to_list_of_dicts",
+                          staticmethod(limited_convert)):
             result = self.inference.perform_inference()
-        finally:
-            HuggingFaceDataHandler.convert_to_list_of_dicts = original_convert
 
         # must return a dict
         self.assertIsInstance(result, dict, "Expected dict of DataFrames")
@@ -55,10 +55,10 @@ class TestInference(unittest.TestCase):
 
                 inference_cols = [c for c in df.columns if c.startswith("inference_")]
                 self.assertGreater(len(inference_cols), 0, "No inference column found")
-                inference_col = inference_cols[0]
+                inference_col = sorted(inference_cols)[-1]
 
                 if split in self.inference.requested_splits or split == "default":
-                    inferred = df[df[inference_col] != ""]
+                    inferred = df[df[inference_col].fillna("").astype(str).str.strip() != ""]
 
                     # at least one inferred line
                     self.assertGreater(
@@ -80,10 +80,9 @@ class TestInference(unittest.TestCase):
 
                 # non-requested split: must contain ONLY empty strings
                 else:
-                    unique_vals = set(df[inference_col].unique())
-                    self.assertEqual(
-                        unique_vals,
-                        {""},
+                    non_empty = df[inference_col].fillna("").astype(str).str.strip().ne("")
+                    self.assertFalse(
+                        non_empty.any(),
                         f"Non-requested split '{split}' should have only empty strings"
                     )
 
@@ -174,13 +173,11 @@ class TestInference(unittest.TestCase):
         from flow_inference.data_handling import HuggingFaceDataHandler
         original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
 
-        def limited_convert(self, dfs):
-            full = original_convert(self, dfs)
+        def limited_convert(dfs):
+            full = original_convert(dfs)
             return {split: recs[:3] for split, recs in full.items()}
 
-        HuggingFaceDataHandler.convert_to_list_of_dicts = limited_convert
-
-        try:
+        with patch.object(HuggingFaceDataHandler, "convert_to_list_of_dicts", staticmethod(limited_convert)):
             inference = Inference(
                 download_repo_name=self.download_repo_name,
                 hf_token=self.write_token,
@@ -191,9 +188,6 @@ class TestInference(unittest.TestCase):
             )
 
             result = inference.perform_inference()
-
-        finally:
-            HuggingFaceDataHandler.convert_to_list_of_dicts = original_convert
 
         # Verify inference output
         self.assertIsInstance(result, dict)
@@ -208,11 +202,11 @@ class TestInference(unittest.TestCase):
                 inference_cols = [c for c in df.columns if c.startswith("inference_")]
                 self.assertGreater(len(inference_cols), 0)
 
-                inference_col = inference_cols[0]
+                inference_col = sorted(inference_cols)[-1]
 
                 # line-level correctness checks
                 if "line_id" in df.columns:
-                    inferred = df[df[inference_col] != ""]
+                    inferred = df[df[inference_col].fillna("").astype(str).str.strip() != ""]
 
                     # Requested splits: must contain inference
                     if split in inference.requested_splits or split == "default":

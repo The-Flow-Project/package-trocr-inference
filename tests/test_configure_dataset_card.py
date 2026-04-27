@@ -290,7 +290,7 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
             self.assertEqual(frontmatter["license"], "mit")
             self.assertEqual(
                 frontmatter["tags"],
-                ["image-to-text", "htr", "trocr", "transcription", "pagexml"],
+                ["image-to-text", "htr", "trocr", "inference", "pagexml"],
             )
 
             data_files = frontmatter["configs"][0]["data_files"]

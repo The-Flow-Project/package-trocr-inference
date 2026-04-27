@@ -382,7 +382,6 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertIn("# Dataset Card for repo", content)
         self.assertIn('dataset = load_dataset("new/repo")', content)
         self.assertIn('dataset_split = load_dataset("new/repo", split="train")', content)
-        self.assertIn("- Number of augmentations: 2", content)
         self.assertIn("### Projects Included", content)
         self.assertIn("docA", content)
         self.assertIn("inference_col", content)

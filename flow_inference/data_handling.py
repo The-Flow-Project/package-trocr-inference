@@ -108,7 +108,6 @@ class HuggingFaceDataHandler:
             revision=self._resolved_sha,
             token=self.huggingface_token,
             local_dir=str(local_root),
-            local_dir_use_symlinks=False,
             allow_patterns=allow_patterns,
         )
 
@@ -271,6 +270,9 @@ class HuggingFaceDataHandler:
         for col in split_df.columns:
             if col not in parquet_idx.columns:
                 parquet_idx[col] = pd.NA
+
+            if str(split_df[col].dtype) == "string" or split_df[col].dtype == object:
+                parquet_idx[col] = parquet_idx[col].astype("string")
 
         parquet_idx.loc[common, split_df.columns] = split_df.loc[common].to_numpy()
 
