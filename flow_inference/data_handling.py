@@ -11,6 +11,10 @@ from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 from flow_inference.utils.logging.inference_logger import logger
 from huggingface_hub import CommitOperationAdd, HfApi, snapshot_download
 
+LINE_AUGMENTATION_COLUMN = "line_augmentation"
+ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
+_UPDATE_OCCURRENCE_COLUMN = "__update_occurrence"
+
 
 # ===============================================================================
 # CLASS
@@ -55,6 +59,7 @@ class HuggingFaceDataHandler:
         self.parquet_paths: dict[str, list[str]] = {}
         self._local_root: Path | None = None
         self._resolved_sha: str | None = None
+        self.real_duplicate_counts: Dict[str, Dict[str, int]] = {}
 
     # ==========================================================================
     # INTERNAL HELPERS
@@ -70,6 +75,161 @@ class HuggingFaceDataHandler:
     @staticmethod
     def _exists_any(paths: List[Path]) -> bool:
         return len(paths) > 0
+
+    @staticmethod
+    def _key_columns_for_df(df: pd.DataFrame) -> list[str]:
+        key = ["project_name", "filename", "line_id"]
+
+        if LINE_AUGMENTATION_COLUMN in df.columns:
+            key.append(LINE_AUGMENTATION_COLUMN)
+
+        return key
+
+    @classmethod
+    def _add_update_occurrence_column(
+        cls,
+        df: pd.DataFrame,
+        key: list[str],
+    ) -> pd.DataFrame:
+        """
+        Add a temporary occurrence counter per update key.
+
+        This lets us preserve duplicate physical rows instead of collapsing them.
+        The temporary column is removed before writing parquet.
+        """
+        df_with_occurrence = df.copy()
+        df_with_occurrence[_UPDATE_OCCURRENCE_COLUMN] = (
+            df_with_occurrence.groupby(key, dropna=False).cumcount()
+        )
+        return df_with_occurrence
+
+    @classmethod
+    def _update_index_columns_for_df(cls, df: pd.DataFrame) -> list[str]:
+        key = cls._key_columns_for_df(df)
+        return key + [_UPDATE_OCCURRENCE_COLUMN]
+
+    @staticmethod
+    def _is_original_line_augmentation_value(value) -> bool:
+        if pd.isna(value):
+            return False
+        return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
+
+    @staticmethod
+    def _real_duplicate_key_columns() -> list[str]:
+        return ["project_name", "filename", "line_id"]
+
+    @classmethod
+    def _df_for_real_duplicate_check(cls, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Return the rows that should be considered for real duplicate-line counting.
+
+        If line_augmentation is absent:
+            consider all rows.
+
+        If line_augmentation is present:
+            consider only rows where line_augmentation == 'original'.
+
+        Augmented rows are deliberately ignored because duplicate augmented rows can
+        occur naturally when random transformations produce identical metadata.
+        """
+        if LINE_AUGMENTATION_COLUMN not in df.columns:
+            return df
+
+        return df[
+            df[LINE_AUGMENTATION_COLUMN].apply(
+                cls._is_original_line_augmentation_value
+            )
+        ]
+
+    @classmethod
+    def count_real_duplicate_lines(cls, df: pd.DataFrame) -> int:
+        """
+        Count rows that participate in real duplicate line keys.
+
+        The real duplicate key is always:
+            project_name + filename + line_id
+
+        For augmented datasets, only original rows are considered.
+        """
+        key = cls._real_duplicate_key_columns()
+
+        for col in key:
+            if col not in df.columns:
+                raise RuntimeError(f"Column '{col}' missing for duplicate-line check")
+
+        check_df = cls._df_for_real_duplicate_check(df)
+
+        return int(check_df.duplicated(key, keep=False).sum())
+
+    @classmethod
+    def count_real_duplicate_line_groups(cls, df: pd.DataFrame) -> int:
+        """
+        Count duplicate key groups, not rows.
+
+        Example:
+            3 rows with the same project_name + filename + line_id count as:
+                duplicate rows: 3
+                duplicate groups: 1
+        """
+        key = cls._real_duplicate_key_columns()
+
+        for col in key:
+            if col not in df.columns:
+                raise RuntimeError(f"Column '{col}' missing for duplicate-line check")
+
+        check_df = cls._df_for_real_duplicate_check(df)
+
+        group_sizes = check_df.groupby(key, dropna=False).size()
+        return int((group_sizes > 1).sum())
+
+    @classmethod
+    def count_real_duplicate_excess_lines(cls, df: pd.DataFrame) -> int:
+        """
+        Count only duplicate rows beyond the first occurrence.
+
+        Example:
+            3 rows with the same project_name + filename + line_id count as:
+                duplicate rows: 3
+                duplicate groups: 1
+                duplicate excess rows: 2
+        """
+        key = cls._real_duplicate_key_columns()
+
+        for col in key:
+            if col not in df.columns:
+                raise RuntimeError(f"Column '{col}' missing for duplicate-line check")
+
+        check_df = cls._df_for_real_duplicate_check(df)
+
+        group_sizes = check_df.groupby(key, dropna=False).size()
+        return int((group_sizes[group_sizes > 1] - 1).sum())
+
+    @classmethod
+    def count_real_duplicate_lines_by_split(
+        cls,
+        dfs: Dict[str, pd.DataFrame],
+    ) -> Dict[str, Dict[str, int]]:
+        """
+        Count real duplicate lines per split.
+
+        Returned values:
+            duplicate_rows:
+                Number of rows participating in duplicate keys.
+
+            duplicate_groups:
+                Number of distinct duplicate keys.
+
+            duplicate_excess_rows:
+                Number of duplicate rows beyond the first occurrence.
+        """
+        return {
+            split: {
+                "duplicate_rows": cls.count_real_duplicate_lines(df),
+                "duplicate_groups": cls.count_real_duplicate_line_groups(df),
+                "duplicate_excess_rows": cls.count_real_duplicate_excess_lines(df),
+            }
+            for split, df in dfs.items()
+        }
 
     # --------------------------------------------------------------------------
     # DOWNLOAD HELPERS
@@ -222,6 +382,12 @@ class HuggingFaceDataHandler:
             dfs[split_name] = self.dataset[split_name].to_pandas()
 
         self.df = dfs
+        self.real_duplicate_counts = self.count_real_duplicate_lines_by_split(dfs)
+
+        logger.info(
+            f"Real duplicate line counts by split: {self.real_duplicate_counts}"
+        )
+
         self.state = "converted"
         return dfs
 
@@ -237,46 +403,79 @@ class HuggingFaceDataHandler:
     # ==========================================================================
     # PUSH TO HUGGING FACE HELPERS
     # ==========================================================================
-    @staticmethod
-    def _index_df_by_key(df: pd.DataFrame, split: str) -> pd.DataFrame:
-        key = ["project_name", "filename", "line_id"]
+    @classmethod
+    def _index_df_by_key(cls, df: pd.DataFrame, split: str) -> pd.DataFrame:
+        key = cls._key_columns_for_df(df)
 
         for col in key:
             if col not in df.columns:
                 raise RuntimeError(f"Column '{col}' missing in split '{split}'")
 
-        idx = df.set_index(key)
+        duplicate_rows = int(df.duplicated(key, keep=False).sum())
+        if duplicate_rows:
+            logger.warning(
+                f"{split}: duplicate update keys detected for {key}: "
+                f"{duplicate_rows} rows. Preserving duplicates with occurrence index."
+            )
+
+        df_with_occurrence = cls._add_update_occurrence_column(df, key)
+        index_cols = key + [_UPDATE_OCCURRENCE_COLUMN]
+
+        idx = df_with_occurrence.set_index(index_cols)
 
         if not idx.index.is_unique:
-            logger.warning(f"{split}: duplicate keys detected — keeping last")
-            idx = idx[~idx.index.duplicated(keep="last")]
+            raise RuntimeError(
+                f"{split}: update index is still not unique after adding occurrence column. "
+                f"Index columns: {index_cols}"
+            )
 
         return idx
 
-    @staticmethod
-    def _update_parquet_file(local_path: Path, split_df: pd.DataFrame) -> Path:
-        key = ["project_name", "filename", "line_id"]
-
+    @classmethod
+    def _update_parquet_file(cls, local_path: Path, split_df: pd.DataFrame) -> Path:
         parquet_df = pd.read_parquet(local_path)
-        parquet_idx = parquet_df.set_index(key)
+
+        key = cls._key_columns_for_df(parquet_df)
+
+        for col in key:
+            if col not in parquet_df.columns:
+                raise RuntimeError(f"Column '{col}' missing in parquet file '{local_path}'")
+
+        duplicate_rows = int(parquet_df.duplicated(key, keep=False).sum())
+        if duplicate_rows:
+            logger.warning(
+                f"{local_path}: duplicate update keys detected for {key}: "
+                f"{duplicate_rows} rows. Preserving duplicates with occurrence index."
+            )
+
+        parquet_with_occurrence = cls._add_update_occurrence_column(parquet_df, key)
+        index_cols = key + [_UPDATE_OCCURRENCE_COLUMN]
+        parquet_idx = parquet_with_occurrence.set_index(index_cols)
 
         if not parquet_idx.index.is_unique:
-            parquet_idx = parquet_idx[~parquet_idx.index.duplicated(keep="last")]
+            raise RuntimeError(
+                f"{local_path}: parquet update index is still not unique after adding "
+                f"occurrence column. Index columns: {index_cols}"
+            )
 
         common = parquet_idx.index.intersection(split_df.index)
         if len(common) == 0:
             return local_path
 
         for col in split_df.columns:
+            if col == _UPDATE_OCCURRENCE_COLUMN:
+                continue
+
             if col not in parquet_idx.columns:
                 parquet_idx[col] = pd.NA
 
-            if str(split_df[col].dtype) == "string" or split_df[col].dtype == object:
-                parquet_idx[col] = parquet_idx[col].astype("string")
-
-        parquet_idx.loc[common, split_df.columns] = split_df.loc[common].to_numpy()
+            parquet_idx.loc[common, col] = split_df.loc[common, col]
 
         updated = parquet_idx.reset_index()
+
+        if _UPDATE_OCCURRENCE_COLUMN in updated.columns:
+            updated = updated.drop(columns=[_UPDATE_OCCURRENCE_COLUMN])
+
         updated.to_parquet(local_path, index=False)
         return local_path
 
@@ -337,6 +536,22 @@ class HuggingFaceDataHandler:
             exist_ok=True,
             token=self.huggingface_token,
         )
+
+        for split, df in self.df.items():
+            key = self._key_columns_for_df(df)
+            dupes = df[df.duplicated(key, keep=False)].sort_values(key)
+
+            if dupes.empty:
+                logger.debug(f"{split}: no duplicate update keys for {key}.")
+            else:
+                logger.warning(
+                    f"{split}: duplicate update keys detected for {key}: "
+                    f"{len(dupes)} rows. They will be preserved with occurrence indexing."
+                )
+                logger.debug(
+                    "\n%s",
+                    dupes[key].head(100).to_string(index=False),
+                )
 
         # ------------------------------------------------------------------
         # 1) Index DataFrames by composite key

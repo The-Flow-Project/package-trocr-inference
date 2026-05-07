@@ -389,19 +389,89 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
     # -------------------------------------------------------------
     # UNIT TEST: INDEXING AND DEDUPLICATION
     # -------------------------------------------------------------
-    def test_index_df_by_composite_key_deduplicates(self):
+    def test_index_df_by_composite_key_preserves_duplicate_rows_with_occurrence_index(self):
         df = pd.DataFrame({
             "project_name": ["p", "p"],
             "filename": ["f", "f"],
             "line_id": ["1", "1"],
-            "text": ["old", "new"]
+            "text": ["old", "new"],
+        })
+
+        idx = HuggingFaceDataHandler._index_df_by_key(df, "train")
+
+        self.assertEqual(len(idx), 2)
+        self.assertTrue(idx.index.is_unique)
+
+        self.assertIn(("p", "f", "1", 0), idx.index)
+        self.assertIn(("p", "f", "1", 1), idx.index)
+
+        self.assertEqual(idx.loc[("p", "f", "1", 0), "text"], "old")
+        self.assertEqual(idx.loc[("p", "f", "1", 1), "text"], "new")
+
+    def test_index_df_by_composite_key_keeps_augmented_rows_distinct(self):
+        df = pd.DataFrame({
+            "project_name": ["p", "p"],
+            "filename": ["f", "f"],
+            "line_id": ["1", "1"],
+            "line_augmentation": ["original", "rotation"],
+            "text": ["orig text", "aug text"],
         })
 
         handler = HuggingFaceDataHandler("x/y")
         idx = handler._index_df_by_key(df, "train")
 
-        self.assertEqual(len(idx), 1)
-        self.assertEqual(idx.iloc[0]["text"], "new")
+        self.assertEqual(len(idx), 2)
+
+        self.assertIn(("p", "f", "1", "original", 0), idx.index)
+        self.assertIn(("p", "f", "1", "rotation", 0), idx.index)
+
+        self.assertEqual(
+            idx.loc[("p", "f", "1", "original", 0), "text"],
+            "orig text",
+        )
+        self.assertEqual(
+            idx.loc[("p", "f", "1", "rotation", 0), "text"],
+            "aug text",
+        )
+
+    def test_update_parquet_file_preserves_augmented_rows(self):
+        tmp_root = Path(tempfile.mkdtemp(prefix="hf_augmented_update_"))
+        parquet_path = tmp_root / "data/train/docA/train_file.parquet"
+
+        parquet_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "line_augmentation": ["original", "rotation"],
+            "text": ["", ""],
+        })
+
+        self._write_parquet(parquet_path, parquet_df)
+
+        split_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "line_augmentation": ["original", "rotation"],
+            "text": ["original updated", ""],
+            "inference_col": ["pred original", ""],
+        })
+
+        split_idx = HuggingFaceDataHandler._index_df_by_key(split_df, "train")
+        HuggingFaceDataHandler._update_parquet_file(parquet_path, split_idx)
+
+        updated = pd.read_parquet(parquet_path)
+
+        self.assertEqual(len(updated), 2)
+
+        original = updated[updated["line_augmentation"] == "original"].iloc[0]
+        rotation = updated[updated["line_augmentation"] == "rotation"].iloc[0]
+
+        self.assertEqual(original["text"], "original updated")
+        self.assertEqual(original["inference_col"], "pred original")
+
+        self.assertEqual(rotation["text"], "")
+        self.assertEqual(rotation["inference_col"], "")
 
     # -------------------------------------------------------------
     # UNIT TEST: SELECTED SPLIT UPDATE
@@ -608,6 +678,167 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         self.assertIn(first_split, verify_dfs)
         self.assertIn("integration_test_inference_col", verify_dfs[first_split].columns)
+
+    def test_count_real_duplicate_lines_without_augmentation(self):
+        df = pd.DataFrame({
+            "project_name": ["p", "p", "p", "p"],
+            "filename": ["f", "f", "f", "f"],
+            "line_id": ["1", "1", "2", "3"],
+            "text": ["a", "b", "c", "d"],
+        })
+
+        counts = HuggingFaceDataHandler.count_real_duplicate_lines_by_split({
+            "train": df
+        })
+
+        self.assertEqual(counts["train"]["duplicate_rows"], 2)
+        self.assertEqual(counts["train"]["duplicate_groups"], 1)
+        self.assertEqual(counts["train"]["duplicate_excess_rows"], 1)
+
+    def test_count_real_duplicate_lines_with_augmentation_only_originals(self):
+        df = pd.DataFrame({
+            "project_name": ["p", "p", "p", "p", "p"],
+            "filename": ["f", "f", "f", "f", "f"],
+            "line_id": ["1", "1", "1", "2", "2"],
+            "line_augmentation": [
+                "original",
+                "original",
+                '{"rotation": 1}',
+                '{"rotation": 1}',
+                '{"rotation": 1}',
+            ],
+            "text": ["orig a", "orig b", "aug a", "aug b", "aug c"],
+        })
+
+        counts = HuggingFaceDataHandler.count_real_duplicate_lines_by_split({
+            "train": df
+        })
+
+        self.assertEqual(counts["train"]["duplicate_rows"], 2)
+        self.assertEqual(counts["train"]["duplicate_groups"], 1)
+        self.assertEqual(counts["train"]["duplicate_excess_rows"], 1)
+
+    def test_count_real_duplicate_lines_ignores_augmented_duplicates(self):
+        df = pd.DataFrame({
+            "project_name": ["p", "p", "p"],
+            "filename": ["f", "f", "f"],
+            "line_id": ["1", "1", "1"],
+            "line_augmentation": [
+                "original",
+                '{"rotation": 1}',
+                '{"rotation": 1}',
+            ],
+            "text": ["orig", "aug a", "aug b"],
+        })
+
+        counts = HuggingFaceDataHandler.count_real_duplicate_lines_by_split({
+            "train": df
+        })
+
+        self.assertEqual(counts["train"]["duplicate_rows"], 0)
+        self.assertEqual(counts["train"]["duplicate_groups"], 0)
+        self.assertEqual(counts["train"]["duplicate_excess_rows"], 0)
+
+    def test_update_parquet_file_preserves_duplicate_rows_with_same_key(self):
+        tmp_root = Path(tempfile.mkdtemp(prefix="hf_duplicate_update_"))
+        parquet_path = tmp_root / "data/train/docA/train_file.parquet"
+
+        parquet_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "text": ["old first", "old second"],
+        })
+
+        self._write_parquet(parquet_path, parquet_df)
+
+        split_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "text": ["new first", "new second"],
+            "inference_col": ["pred first", "pred second"],
+        })
+
+        split_idx = HuggingFaceDataHandler._index_df_by_key(split_df, "train")
+        HuggingFaceDataHandler._update_parquet_file(parquet_path, split_idx)
+
+        updated = pd.read_parquet(parquet_path)
+
+        self.assertEqual(len(updated), 2)
+        self.assertEqual(updated["text"].tolist(), ["new first", "new second"])
+        self.assertEqual(updated["inference_col"].tolist(), ["pred first", "pred second"])
+
+    def test_update_parquet_file_preserves_duplicate_original_augmented_rows(self):
+        tmp_root = Path(tempfile.mkdtemp(prefix="hf_duplicate_augmented_update_"))
+        parquet_path = tmp_root / "data/train/docA/train_file.parquet"
+
+        parquet_df = pd.DataFrame({
+            "project_name": ["docA", "docA", "docA"],
+            "filename": ["train_file", "train_file", "train_file"],
+            "line_id": ["L1", "L1", "L1"],
+            "line_augmentation": ["original", "original", '{"rotation": 1}'],
+            "text": ["old original first", "old original second", "old augmented"],
+        })
+
+        self._write_parquet(parquet_path, parquet_df)
+
+        split_df = pd.DataFrame({
+            "project_name": ["docA", "docA", "docA"],
+            "filename": ["train_file", "train_file", "train_file"],
+            "line_id": ["L1", "L1", "L1"],
+            "line_augmentation": ["original", "original", '{"rotation": 1}'],
+            "text": ["new original first", "new original second", "old augmented"],
+            "inference_col": ["pred first", "pred second", ""],
+        })
+
+        split_idx = HuggingFaceDataHandler._index_df_by_key(split_df, "train")
+        HuggingFaceDataHandler._update_parquet_file(parquet_path, split_idx)
+
+        updated = pd.read_parquet(parquet_path)
+
+        self.assertEqual(len(updated), 3)
+
+        original_rows = updated[updated["line_augmentation"] == "original"]
+        augmented_rows = updated[updated["line_augmentation"] != "original"]
+
+        self.assertEqual(
+            original_rows["inference_col"].tolist(),
+            ["pred first", "pred second"],
+        )
+        self.assertEqual(
+            augmented_rows["inference_col"].tolist(),
+            [""],
+        )
+
+    def test_update_parquet_file_uses_duplicate_occurrence_order(self):
+        tmp_root = Path(tempfile.mkdtemp(prefix="hf_duplicate_order_update_"))
+        parquet_path = tmp_root / "data/train/docA/train_file.parquet"
+
+        parquet_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "text": ["old first", "old second"],
+        })
+
+        self._write_parquet(parquet_path, parquet_df)
+
+        split_df = pd.DataFrame({
+            "project_name": ["docA", "docA"],
+            "filename": ["train_file", "train_file"],
+            "line_id": ["L1", "L1"],
+            "text": ["new first", "new second"],
+            "inference_col": ["pred first", "pred second"],
+        })
+
+        split_idx = HuggingFaceDataHandler._index_df_by_key(split_df, "train")
+        HuggingFaceDataHandler._update_parquet_file(parquet_path, split_idx)
+
+        updated = pd.read_parquet(parquet_path)
+
+        self.assertEqual(updated["text"].tolist(), ["new first", "new second"])
+        self.assertEqual(updated["inference_col"].tolist(), ["pred first", "pred second"])
 
 
 if __name__ == "__main__":
