@@ -3,17 +3,19 @@
 # ===============================================================================
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Iterable, Set, Union
+from typing import Dict, List, Optional, Iterable, Set, Union, Literal
 import pandas as pd
 from datasets import Dataset, DatasetDict, Split, load_dataset
 from datasets.exceptions import DatasetNotFoundError
 from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 from flow_inference.utils.logging.inference_logger import logger
-from huggingface_hub import CommitOperationAdd, HfApi, snapshot_download
+from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, snapshot_download
+from huggingface_hub.utils import HfHubHTTPError
 
 LINE_AUGMENTATION_COLUMN = "line_augmentation"
 ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
 _UPDATE_OCCURRENCE_COLUMN = "__update_occurrence"
+UploadMode = Literal["new_repo", "replace", "update"]
 
 
 # ===============================================================================
@@ -71,6 +73,39 @@ class HuggingFaceDataHandler:
         if isinstance(split, (list, tuple, set)):
             return {str(s).lower() for s in split}
         return {str(split).lower()}
+
+    @classmethod
+    def _normalize_inference_columns_across_splits(
+            cls,
+            dfs: Dict[str, pd.DataFrame],
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Ensure every split DataFrame has the same inference_* columns.
+
+        Hugging Face can fail when parquet files in the same dataset load have
+        different schemas. This keeps additive inference columns safe across splits
+        and across multiple update runs.
+        """
+        all_inference_columns: list[str] = []
+
+        for df in dfs.values():
+            for col in df.columns:
+                col_str = str(col)
+                if cls._is_inference_column(col_str) and col_str not in all_inference_columns:
+                    all_inference_columns.append(col_str)
+
+        normalized: Dict[str, pd.DataFrame] = {}
+
+        for split, df in dfs.items():
+            normalized_df = df.copy()
+
+            for col in all_inference_columns:
+                if col not in normalized_df.columns:
+                    normalized_df[col] = ""
+
+            normalized[split] = normalized_df
+
+        return normalized
 
     @staticmethod
     def _exists_any(paths: List[Path]) -> bool:
@@ -231,6 +266,186 @@ class HuggingFaceDataHandler:
             for split, df in dfs.items()
         }
 
+    @staticmethod
+    def _is_inference_column(column: str) -> bool:
+        return column.startswith("inference_")
+
+    @staticmethod
+    def _repo_exists(api: HfApi, repo_id: str, token: Optional[str]) -> bool:
+        try:
+            api.dataset_info(
+                repo_id=repo_id,
+                token=token,
+            )
+            return True
+        except HfHubHTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return False
+            raise
+
+    @staticmethod
+    def _list_repo_files_if_exists(
+        api: HfApi,
+        repo_id: str,
+        token: Optional[str],
+    ) -> list[str]:
+        if not HuggingFaceDataHandler._repo_exists(api, repo_id, token):
+            return []
+
+        return api.list_repo_files(
+            repo_id=repo_id,
+            repo_type="dataset",
+            token=token,
+        )
+
+    def _repo_path_for_local_path(self, local_path: Path) -> str:
+        if self._local_root is None:
+            raise RuntimeError("Missing local snapshot root.")
+
+        return str(local_path.relative_to(self._local_root)).replace("\\", "/")
+
+    def _current_parquet_repo_paths(self) -> set[str]:
+        paths: set[str] = set()
+
+        for parquet_files in self.parquet_paths.values():
+            for parquet_path in parquet_files:
+                paths.add(self._repo_path_for_local_path(Path(parquet_path)))
+
+        return paths
+
+    @classmethod
+    def _base_columns(cls, df: pd.DataFrame) -> list[str]:
+        return [
+            col
+            for col in df.columns
+            if not cls._is_inference_column(str(col))
+        ]
+
+    @classmethod
+    def _validate_compatible_base_schema(
+        cls,
+        current_df: pd.DataFrame,
+        target_df: pd.DataFrame,
+        target_path: str,
+    ) -> None:
+        current_base = cls._base_columns(current_df)
+        target_base = cls._base_columns(target_df)
+
+        if set(current_base) != set(target_base):
+            missing_in_target = sorted(set(current_base) - set(target_base))
+            extra_in_target = sorted(set(target_base) - set(current_base))
+
+            raise RuntimeError(
+                "Refusing update: target parquet schema is incompatible with "
+                f"the current dataset for '{target_path}'.\n"
+                f"Missing in target: {missing_in_target}\n"
+                f"Extra in target: {extra_in_target}\n"
+                "Use upload_mode='replace' if you intentionally want to replace "
+                "the target dataset structure."
+            )
+
+    def _merge_existing_target_inference_columns(
+            self,
+            target_repo: str,
+            target_files: list[str],
+    ) -> None:
+        """
+        For upload_mode='update':
+
+        - Validate target parquet file layout exactly matches this run.
+        - Validate target base schema matches current source schema.
+        - Validate each matching parquet file has the same rows.
+        - Copy existing target inference_* columns into self.df.
+        - Keep newly generated inference columns already present in self.df.
+        """
+        if self.df is None:
+            raise RuntimeError("No DataFrames stored. Call to_dataframe() first.")
+
+        self._validate_update_target_files(target_files)
+
+        target_root = self._download_target_snapshot_for_update(target_repo)
+
+        for split, current_df in list(self.df.items()):
+            # Full split-level dataframe. This is where we merge old target
+            # inference columns into the newly generated dataframe.
+            current_idx = self._index_df_by_key(current_df, split)
+
+            for current_parquet_path in self.parquet_paths.get(split, []):
+                current_local_path = Path(current_parquet_path)
+                repo_path = self._repo_path_for_local_path(current_local_path)
+                target_local_path = target_root / repo_path
+
+                if not target_local_path.exists():
+                    raise RuntimeError(
+                        "Refusing update: target parquet file is missing after layout "
+                        f"validation: '{repo_path}'."
+                    )
+
+                current_file_df = pd.read_parquet(current_local_path)
+                target_file_df = pd.read_parquet(target_local_path)
+
+                self._validate_compatible_base_schema(
+                    current_df=current_file_df,
+                    target_df=target_file_df,
+                    target_path=repo_path,
+                )
+
+                current_file_idx = self._index_df_by_key(current_file_df, split)
+                target_file_idx = self._index_df_by_key(target_file_df, split)
+
+                missing_target_rows = target_file_idx.index.difference(current_file_idx.index)
+                if len(missing_target_rows) > 0:
+                    raise RuntimeError(
+                        "Refusing update: target contains rows that are not present "
+                        f"in the current dataset for '{repo_path}'. "
+                        "Use upload_mode='replace' if this dataset structure change "
+                        "is intentional."
+                    )
+
+                missing_current_rows = current_file_idx.index.difference(target_file_idx.index)
+                if len(missing_current_rows) > 0:
+                    raise RuntimeError(
+                        "Refusing update: current dataset contains rows that are not present "
+                        f"in the target dataset for '{repo_path}'. "
+                        "Use upload_mode='replace' if this dataset structure change is intentional."
+                    )
+
+                target_inference_cols = [
+                    col
+                    for col in target_file_idx.columns
+                    if self._is_inference_column(str(col))
+                ]
+
+                for col in target_inference_cols:
+                    if col not in current_idx.columns:
+                        current_idx[col] = pd.NA
+
+                    # Important: assign only rows from this file into the full split index.
+                    current_idx.loc[target_file_idx.index, col] = target_file_idx[col]
+
+            merged = current_idx.reset_index()
+
+            if _UPDATE_OCCURRENCE_COLUMN in merged.columns:
+                merged = merged.drop(columns=[_UPDATE_OCCURRENCE_COLUMN])
+
+            self.df[split] = merged
+
+    def _build_replace_delete_operations(
+        self,
+        target_files: list[str],
+        paths_that_will_be_added: set[str],
+    ) -> list[CommitOperationDelete]:
+        operations: list[CommitOperationDelete] = []
+
+        for path in target_files:
+            should_delete = path == "README.md" or path.startswith("data/")
+            will_be_readded = path in paths_that_will_be_added
+
+            if should_delete and not will_be_readded:
+                operations.append(CommitOperationDelete(path_in_repo=path))
+
+        return operations
+
     # --------------------------------------------------------------------------
     # DOWNLOAD HELPERS
     # --------------------------------------------------------------------------
@@ -272,6 +487,67 @@ class HuggingFaceDataHandler:
         )
 
         return local_root
+
+    # --------------------------------------------------------------------------
+    # UPDATE HELPERS
+    # --------------------------------------------------------------------------
+
+    def _validate_source_repo_update_allowed(
+        self,
+        upload_repo_name: str,
+        allow_source_repo_update: bool,
+    ) -> None:
+        if upload_repo_name == self.dataset_name and not allow_source_repo_update:
+            raise RuntimeError(
+                "Refusing to upload into the source dataset repo. "
+                f"download_repo_name and upload_repo_name are both '{self.dataset_name}'. "
+                "Pass allow_source_repo_update=True only if this is intentional."
+            )
+
+    def _build_add_current_dataset_operations(
+        self,
+        target_repo: str,
+    ) -> list[CommitOperationAdd]:
+        operations: list[CommitOperationAdd] = []
+
+        for parquet_files in self.parquet_paths.values():
+            for parquet_path in parquet_files:
+                operations.append(self._make_commit_op(Path(parquet_path)))
+
+        operations.append(
+            self._add_generated_readme_commit_op(
+                target_repo=target_repo,
+            )
+        )
+
+        return operations
+
+    def _validate_update_target_files(
+        self,
+        target_files: list[str],
+    ) -> None:
+        current_parquet_paths = self._current_parquet_repo_paths()
+
+        target_parquet_paths = {
+            path
+            for path in target_files
+            if path.startswith("data/") and path.endswith(".parquet")
+        }
+
+        extra_target_parquets = target_parquet_paths - current_parquet_paths
+        missing_target_parquets = current_parquet_paths - target_parquet_paths
+
+        if extra_target_parquets or missing_target_parquets:
+            extra_formatted = "\n".join(sorted(extra_target_parquets)) or "(none)"
+            missing_formatted = "\n".join(sorted(missing_target_parquets)) or "(none)"
+
+            raise RuntimeError(
+                "Refusing update: target repo parquet layout does not exactly match "
+                "the current run. Use upload_mode='replace' if this dataset structure "
+                "change is intentional.\n"
+                f"Extra target parquet files:\n{extra_formatted}\n"
+                f"Missing target parquet files:\n{missing_formatted}"
+            )
 
     # --------------------------------------------------------------------------
     # SPLIT SELECTION
@@ -368,6 +644,24 @@ class HuggingFaceDataHandler:
             self.state = "failed"
             logger.exception("Failed to download dataset")
             raise
+
+    def _download_target_snapshot_for_update(
+        self,
+        target_repo: str,
+    ) -> Path:
+        target_cache_dir = tempfile.mkdtemp(prefix="hf_target_ds_")
+        target_root = Path(target_cache_dir) / "snapshot"
+        target_root.mkdir(parents=True, exist_ok=True)
+
+        snapshot_download(
+            repo_id=target_repo,
+            repo_type="dataset",
+            token=self.huggingface_token,
+            local_dir=str(target_root),
+            allow_patterns=["data/**/*.parquet"],
+        )
+
+        return target_root
 
     # ==========================================================================
     # CONVERSION
@@ -480,10 +774,7 @@ class HuggingFaceDataHandler:
         return local_path
 
     def _make_commit_op(self, local_path: Path) -> CommitOperationAdd:
-        if self._local_root is None:
-            raise RuntimeError("Missing local snapshot root.")
-
-        hf_path = str(local_path.relative_to(self._local_root)).replace("\\", "/")
+        hf_path = self._repo_path_for_local_path(local_path)
         return CommitOperationAdd(path_in_repo=hf_path, path_or_fileobj=str(local_path))
 
     def _add_generated_readme_commit_op(
@@ -514,10 +805,12 @@ class HuggingFaceDataHandler:
     # PUSH UPDATED DATASET
     # ==========================================================================
     def push_to_hub(
-        self,
-        upload_repo_name: str,
-        private: bool = True,
-        commit_message: str = "Upload updated dataset",
+            self,
+            upload_repo_name: str,
+            private: bool = True,
+            commit_message: str = "Upload updated dataset",
+            upload_mode: UploadMode = "new_repo",
+            allow_source_repo_update: bool = False,
     ) -> None:
         if self.df is None:
             raise RuntimeError("No DataFrames stored. Call to_dataframe() first.")
@@ -526,16 +819,74 @@ class HuggingFaceDataHandler:
         if self._local_root is None:
             raise RuntimeError("Missing local snapshot root.")
 
-        api = HfApi()
-        operations: list[CommitOperationAdd] = []
+        if upload_mode not in {"new_repo", "replace", "update"}:
+            raise ValueError(
+                "upload_mode must be one of: 'new_repo', 'replace', 'update'"
+            )
 
-        api.create_repo(
+        self._validate_source_repo_update_allowed(
+            upload_repo_name=upload_repo_name,
+            allow_source_repo_update=allow_source_repo_update,
+        )
+
+        api = HfApi()
+
+        target_exists = self._repo_exists(
+            api=api,
             repo_id=upload_repo_name,
-            repo_type="dataset",
-            private=private,
-            exist_ok=True,
             token=self.huggingface_token,
         )
+
+        if target_exists and upload_mode == "new_repo":
+            raise RuntimeError(
+                f"Target dataset repo '{upload_repo_name}' already exists. "
+                "Use upload_mode='update' to add inference columns to an existing compatible repo, "
+                "or upload_mode='replace' to replace the target dataset contents."
+            )
+
+        if not target_exists and upload_mode == "update":
+            raise RuntimeError(
+                f"Target dataset repo '{upload_repo_name}' does not exist. "
+                "Use upload_mode='new_repo' to create it."
+            )
+
+        if not target_exists:
+            api.create_repo(
+                repo_id=upload_repo_name,
+                repo_type="dataset",
+                private=private,
+                exist_ok=False,
+                token=self.huggingface_token,
+            )
+            target_files: list[str] = []
+            logger.info(f"Created new HF dataset repo: {upload_repo_name}")
+        else:
+            target_files = api.list_repo_files(
+                repo_id=upload_repo_name,
+                repo_type="dataset",
+                token=self.huggingface_token,
+            )
+
+        if upload_mode == "update" and target_exists:
+            self._merge_existing_target_inference_columns(
+                target_repo=upload_repo_name,
+                target_files=target_files,
+            )
+
+        self.df = self._normalize_inference_columns_across_splits(self.df)
+
+        operations: list[CommitOperationAdd | CommitOperationDelete] = []
+
+        paths_that_will_be_added = self._current_parquet_repo_paths()
+        paths_that_will_be_added.add("README.md")
+
+        if upload_mode == "replace" and target_exists:
+            operations.extend(
+                self._build_replace_delete_operations(
+                    target_files=target_files,
+                    paths_that_will_be_added=paths_that_will_be_added,
+                )
+            )
 
         for split, df in self.df.items():
             key = self._key_columns_for_df(df)
@@ -553,17 +904,11 @@ class HuggingFaceDataHandler:
                     dupes[key].head(100).to_string(index=False),
                 )
 
-        # ------------------------------------------------------------------
-        # 1) Index DataFrames by composite key
-        # ------------------------------------------------------------------
         df_by_split_idx = {
             split: self._index_df_by_key(df, split)
             for split, df in self.df.items()
         }
 
-        # ------------------------------------------------------------------
-        # 2) Update parquet files + add commit operations
-        # ------------------------------------------------------------------
         for split, parquet_files in self.parquet_paths.items():
             if split not in df_by_split_idx:
                 continue
@@ -573,18 +918,12 @@ class HuggingFaceDataHandler:
                 self._update_parquet_file(local_path, df_by_split_idx[split])
                 operations.append(self._make_commit_op(local_path))
 
-        # ------------------------------------------------------------------
-        # 3) Add README to same commit
-        # ------------------------------------------------------------------
         operations.append(
             self._add_generated_readme_commit_op(
                 target_repo=upload_repo_name,
             )
         )
 
-        # ------------------------------------------------------------------
-        # 4) Single commit (parquet + README)
-        # ------------------------------------------------------------------
         api.create_commit(
             repo_id=upload_repo_name,
             repo_type="dataset",
@@ -593,7 +932,10 @@ class HuggingFaceDataHandler:
             token=self.huggingface_token,
         )
 
-        logger.info(f"Uploaded updated parquet files + README to HF Hub: {upload_repo_name}")
+        logger.info(
+            f"Uploaded dataset to HF Hub: {upload_repo_name} "
+            f"(upload_mode={upload_mode})"
+        )
         self.state = "pushed"
 
     # ==========================================================================

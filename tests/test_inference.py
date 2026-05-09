@@ -1,12 +1,15 @@
 import os
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
 import pandas as pd
-from flow_inference.inference import Inference
 from dotenv import load_dotenv
+from huggingface_hub import HfApi
 
+from flow_inference.inference import Inference
 from flow_inference.model_handling import ModelManager
+from flow_inference.data_handling import HuggingFaceDataHandler
 
 
 class TestInference(unittest.TestCase):
@@ -66,10 +69,16 @@ class TestInference(unittest.TestCase):
 
         return originals[:limit]
 
+    def _unique_test_repo_name(self, suffix: str) -> str:
+        if not self.test_repo:
+            self.skipTest("Missing HUGGINGFACE_TEST_UPLOAD_REPO_NAME.")
+
+        namespace = self.test_repo.rsplit("/", 1)[0]
+        safe_suffix = suffix.replace("_", "-")
+        return f"{namespace}/test-inference-{safe_suffix}-{uuid4().hex[:8]}"
+
     def test_perform_inference_returns_dataframe(self):
         """Run the full inference pipeline and ensure it returns a dict of DataFrames."""
-        from flow_inference.data_handling import HuggingFaceDataHandler
-
         # limit dataset to 3 original rows per split when augmented
         original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
 
@@ -207,28 +216,26 @@ class TestInference(unittest.TestCase):
         """
         Full integration test:
         - downloads dataset
-        - runs inference
+        - runs inference on a limited number of records
         - writes results back into dataframe
-        - pushes updated dataset to HF Hub
+        - pushes updated dataset to a fresh HF Hub target repo
+        - verifies parquet files + README exist
+        - never uploads to the source repo
         """
 
-        if not self.write_token or not self.test_repo:
-            self.skipTest("Missing WRITE token or upload repo name.")
+        if (
+            not self.write_token
+            or not self.hf_token
+            or not self.test_repo
+            or not self.download_repo_name
+        ):
+            self.skipTest("Missing Hugging Face credentials or repo names.")
 
-        from huggingface_hub import HfApi
-        api = HfApi()
+        target_repo = self._unique_test_repo_name("full-upload")
+        self.assertNotEqual(target_repo, self.download_repo_name)
 
-        # Ensure repo exists
-        api.create_repo(
-            repo_id=self.test_repo,
-            token=self.write_token,
-            exist_ok=True,
-            repo_type="dataset",
-            private=True,
-        )
-
-        # limit dataset size
         from flow_inference.data_handling import HuggingFaceDataHandler
+
         original_convert = HuggingFaceDataHandler.convert_to_list_of_dicts
 
         def limited_convert(dfs):
@@ -238,57 +245,55 @@ class TestInference(unittest.TestCase):
                 for split, recs in full.items()
             }
 
-        with patch.object(HuggingFaceDataHandler, "convert_to_list_of_dicts", staticmethod(limited_convert)):
+        with patch.object(
+            HuggingFaceDataHandler,
+            "convert_to_list_of_dicts",
+            staticmethod(limited_convert),
+        ):
             inference = Inference(
                 download_repo_name=self.download_repo_name,
                 hf_token=self.write_token,
                 trocr_model="microsoft/trocr-small-handwritten",
                 stop_on_fail=False,
                 push_to_hub=True,
-                upload_repo_name=self.test_repo
+                upload_repo_name=target_repo,
+                upload_mode="new_repo",
+                private_repo=True,
             )
 
             result = inference.perform_inference()
 
-        # Verify inference output
         self.assertIsInstance(result, dict)
         self.assertGreater(len(result), 0)
 
-        # Verify all returned splits have inference columns
+        written_inference_col = None
+
         for split, df in result.items():
             with self.subTest(split=split):
-
                 self.assertFalse(df.empty)
 
                 inference_cols = [c for c in df.columns if c.startswith("inference_")]
                 self.assertGreater(len(inference_cols), 0)
 
                 inference_col = sorted(inference_cols)[-1]
+                written_inference_col = inference_col
 
-                # line-level correctness checks
                 if "line_id" in df.columns:
-                    inferred = df[df[inference_col].fillna("").astype(str).str.strip() != ""]
+                    inferred = df[
+                        df[inference_col]
+                        .fillna("")
+                        .astype(str)
+                        .str.strip()
+                        .ne("")
+                    ]
 
-                    # Requested splits: must contain inference
                     if split in inference.requested_splits or split == "default":
-
                         self.assertGreater(
                             len(inferred),
                             0,
-                            f"No inference results written for requested split '{split}'"
+                            f"No inference results written for requested split '{split}'",
                         )
 
-                        self.assertFalse(
-                            inferred[inference_col]
-                            .fillna("")
-                            .astype(str)
-                            .str.strip()
-                            .eq("")
-                            .any(),
-                            f"Some inferred rows have empty inference values in split '{split}'"
-                        )
-
-                        # if augmented, only original rows may receive inference
                         if "line_augmentation" in df.columns:
                             non_original = df[~self._is_original_row(df)]
                             non_original_non_empty = (
@@ -301,34 +306,62 @@ class TestInference(unittest.TestCase):
 
                             self.assertFalse(
                                 non_original_non_empty.any(),
-                                f"Non-original augmented rows received inference in split '{split}'"
+                                f"Non-original augmented rows received inference in split '{split}'",
                             )
-
-                    # Unrequested splits: must contain ONLY empty strings
                     else:
                         self.assertEqual(
                             len(inferred),
                             0,
-                            f"Unrequested split '{split}' should not contain inference results"
+                            f"Unrequested split '{split}' should not contain inference results",
                         )
 
-        # Verify upload to HF Hub
+        api = HfApi()
         files = api.list_repo_files(
-            repo_id=self.test_repo,
+            repo_id=target_repo,
             repo_type="dataset",
-            token=self.write_token
+            token=self.write_token,
         )
 
         files_lower = [f.lower() for f in files]
 
+        self.assertIn("README.md", files)
         self.assertTrue(
             any("train" in f for f in files_lower),
-            "Uploaded repo missing train split parquet"
+            "Uploaded repo missing train split parquet",
+        )
+        self.assertTrue(
+            any(f.endswith(".parquet") for f in files_lower),
+            "No parquet files uploaded",
         )
 
+        verify_handler = HuggingFaceDataHandler(
+            dataset_name=target_repo,
+            huggingface_token=self.hf_token,
+            split=None,
+        )
+        verify_handler.download_hf_dataset()
+        verify_dfs = verify_handler.to_dataframe()
+
+        self.assertGreater(len(verify_dfs), 0)
+        self.assertIsNotNone(written_inference_col)
+
+        found_uploaded_inference_col = False
+        found_uploaded_prediction = False
+
+        for df in verify_dfs.values():
+            if written_inference_col in df.columns:
+                found_uploaded_inference_col = True
+                values = df[written_inference_col].fillna("").astype(str).str.strip()
+                if values.ne("").any():
+                    found_uploaded_prediction = True
+
         self.assertTrue(
-            any("parquet" in f for f in files_lower),
-            "No parquet files uploaded"
+            found_uploaded_inference_col,
+            f"Uploaded repo missing inference column '{written_inference_col}'",
+        )
+        self.assertTrue(
+            found_uploaded_prediction,
+            "Uploaded inference column exists but contains no non-empty prediction.",
         )
 
     def test_filter_records_for_inference_without_line_augmentation_keeps_all_records(self):
@@ -549,6 +582,72 @@ class TestInference(unittest.TestCase):
             [(record["project_name"], record["filename"], record["line_id"]) for record in filtered],
             [("p", "f", "1"), ("p", "f", "1")],
         )
+
+    @patch("flow_inference.inference.HuggingFaceDataHandler")
+    @patch("flow_inference.inference.ModelManager")
+    def test_perform_inference_refuses_source_repo_upload_by_default(
+            self,
+            mock_model_manager_cls,
+            mock_handler_cls,
+    ):
+        """
+        If push_to_hub=True and no upload_repo_name is provided,
+        Inference would target the source repo. This must be refused unless
+        allow_source_repo_update=True.
+        """
+        mock_model_manager = mock_model_manager_cls.return_value
+        mock_model_manager.device = "cpu"
+        mock_model_manager.load_processor.return_value = object()
+        mock_model_manager.load_model.return_value = object()
+
+        mock_loader = mock_handler_cls.return_value
+
+        df = pd.DataFrame({
+            "project_name": ["p"],
+            "filename": ["f"],
+            "line_id": ["1"],
+            "text": [""],
+        })
+
+        mock_loader.to_dataframe.return_value = {"train": df}
+        mock_loader.convert_to_list_of_dicts.return_value = {
+            "train": [
+                {
+                    "project_name": "p",
+                    "filename": "f",
+                    "line_id": "1",
+                    "text": "",
+                }
+            ]
+        }
+
+        mock_loader.push_to_hub.side_effect = RuntimeError(
+            "Refusing to upload into the source dataset repo"
+        )
+
+        inference = Inference(
+            download_repo_name="same/source-repo",
+            hf_token="TOKEN",
+            trocr_model="microsoft/trocr-small-handwritten",
+            stop_on_fail=False,
+            push_to_hub=True,
+            upload_repo_name=None,
+            upload_mode="new_repo",
+            allow_source_repo_update=False,
+        )
+
+        with patch.object(
+                inference,
+                "run_inference",
+                return_value={("p", "f", "1"): ["pred"]},
+        ):
+            with self.assertRaisesRegex(
+                    RuntimeError,
+                    "Refusing to upload into the source dataset repo",
+            ):
+                inference.perform_inference()
+
+        mock_loader.push_to_hub.assert_called_once()
 
 
 if __name__ == "__main__":

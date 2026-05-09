@@ -27,7 +27,9 @@ class Inference:
                  splits: Optional[List[str]] = None,
                  push_to_hub: bool = True,
                  private_repo: bool = True,
-                 upload_repo_name: Optional[str] = None
+                 upload_repo_name: Optional[str] = None,
+                 upload_mode: str = "new_repo",
+                 allow_source_repo_update: bool = False,
                  ) -> None:
 
         self.download_repo_name = download_repo_name
@@ -39,6 +41,8 @@ class Inference:
         self.push_to_hub = push_to_hub
         self.private_repo = private_repo
         self.upload_repo_name = upload_repo_name or download_repo_name
+        self.upload_mode = upload_mode
+        self.allow_source_repo_update = allow_source_repo_update
         self.statusManager = Status()
         self.model_manager = ModelManager()
         self.processor = self.model_manager.load_processor(self.trocr_model)
@@ -101,7 +105,8 @@ class Inference:
         logger.debug("Downloading dataset from Hugging Face Hub.")
         loader = HuggingFaceDataHandler(
             dataset_name=self.download_repo_name,
-            huggingface_token=self.hf_token
+            huggingface_token=self.hf_token,
+            split=self.requested_splits,
         )
 
         try:
@@ -164,7 +169,9 @@ class Inference:
             loader.push_to_hub(
                 upload_repo_name=self.upload_repo_name,
                 private=self.private_repo,
-                commit_message="Add inference results"
+                commit_message="Add inference results",
+                upload_mode=self.upload_mode,
+                allow_source_repo_update=self.allow_source_repo_update,
             )
 
         logger.info("Inference process completed successfully.")
