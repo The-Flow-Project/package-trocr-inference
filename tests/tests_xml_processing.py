@@ -49,7 +49,8 @@ class TestXMLProcessor(unittest.TestCase):
             "L3": "Line 3 text"
         }
 
-        xp.insert_inferred_lines(xp.root, inferred)
+        updated_count = xp.insert_inferred_lines(xp.root, inferred)
+        self.assertEqual(updated_count, 2)
 
         ns = {"ns": xp.namespace_uri}
         updated = ET.ElementTree(ET.fromstring(xp.tree_to_string()))
@@ -84,6 +85,51 @@ class TestXMLProcessor(unittest.TestCase):
 
         self.assertIsInstance(xml_string, str)
         self.assertIn("TextLine", xml_string)
+
+    def test_insert_inferred_lines_skips_duplicate_textline_ids(self):
+        xml_with_duplicate_id = """
+        <PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15">
+            <Page imageFilename="sample.png">
+                <TextRegion id="r1">
+                    <TextLine id="L1">
+                        <Coords points="0,0 10,0 10,10 0,10"/>
+                    </TextLine>
+                    <TextLine id="L1">
+                        <Coords points="0,20 10,20 10,30 0,30"/>
+                    </TextLine>
+                </TextRegion>
+            </Page>
+        </PcGts>
+        """
+
+        xp = XMLProcessor.from_string(xml_with_duplicate_id)
+
+        updated_count = xp.insert_inferred_lines(xp.root, {"L1": "Line 1 text"})
+        self.assertEqual(updated_count, 1)
+
+        ns = {"ns": xp.namespace_uri}
+        root = ET.fromstring(xp.tree_to_string())
+        lines = root.findall(".//ns:TextLine[@id='L1']", namespaces=ns)
+
+        self.assertEqual(len(lines), 2)
+
+        first_te = lines[0].find(".//ns:TextEquiv", namespaces=ns)
+        second_te = lines[1].find(".//ns:TextEquiv", namespaces=ns)
+
+        self.assertIsNotNone(first_te)
+        self.assertIsNone(second_te)
+
+    def test_insert_inferred_lines_returns_zero_when_no_ids_match(self):
+        xp = XMLProcessor.from_string(SAMPLE_XML)
+
+        updated_count = xp.insert_inferred_lines(xp.root, {"DOES_NOT_EXIST": "Text"})
+        self.assertEqual(updated_count, 0)
+
+        ns = {"ns": xp.namespace_uri}
+        root = ET.fromstring(xp.tree_to_string())
+
+        text_equivs = root.findall(".//ns:TextEquiv", namespaces=ns)
+        self.assertEqual(len(text_equivs), 0)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 import xml.etree.ElementTree as et
 from typing import Dict
 import io
-
+from flow_inference.utils.logging.inference_logger import logger
 
 # ===============================================================================
 # CLASS
@@ -55,19 +55,41 @@ class XMLProcessor:
         u.text = text
         return te
 
-    def insert_inferred_lines(self, root, inferred_lines: Dict[str, str]):
+    def insert_inferred_lines(self, root, inferred_lines: Dict[str, str]) -> int:
         """
         inferred_lines = { line_id: text }
+
+        Returns the number of TextLine elements actually updated.
         """
+        updated_count = 0
+        seen_ids: set[str] = set()
+
         for tl in root.findall(f".//{self.xmlns}TextLine"):
             tl_id = tl.get("id")
-            if tl_id in inferred_lines:
-                # delete existing TextEquiv
-                for old_te in tl.findall(f"{self.xmlns}TextEquiv"):
-                    tl.remove(old_te)
 
-                # insert new one
-                tl.append(self.create_text_equiv_element(inferred_lines[tl_id]))
+            if not tl_id:
+                continue
+
+            if tl_id in seen_ids:
+                logger.warning(f"Duplicate TextLine id in XML: {tl_id}. Skipping duplicate.")
+                continue
+
+            seen_ids.add(tl_id)
+
+            if tl_id not in inferred_lines:
+                continue
+
+            text = inferred_lines[tl_id]
+
+            # delete existing TextEquiv
+            for old_te in tl.findall(f"{self.xmlns}TextEquiv"):
+                tl.remove(old_te)
+
+            # insert new one
+            tl.append(self.create_text_equiv_element(text))
+            updated_count += 1
+
+        return updated_count
 
     def extract_all_text_lines(self):
         lines = []

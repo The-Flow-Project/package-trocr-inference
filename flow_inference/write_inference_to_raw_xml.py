@@ -4,6 +4,10 @@ from huggingface_hub import HfApi, snapshot_download, CommitOperationAdd
 from datasets import load_dataset, DatasetDict
 from flow_inference.xml_processing import XMLProcessor
 from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
+from flow_inference.utils.logging.inference_logger import logger
+
+LINE_AUGMENTATION_COLUMN = "line_augmentation"
+ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
 
 
 class InferenceToRawXMLWriter:
@@ -151,13 +155,70 @@ class InferenceToRawXMLWriter:
         return f"inference_xml_{timestamp}_from_{repo_name}"
 
     @staticmethod
-    def _build_lookup(df: pd.DataFrame) -> dict:
-        inference_col = [c for c in df.columns if c.startswith("inference_")][0]
+    def _is_original_line_augmentation_value(value) -> bool:
+        if pd.isna(value):
+            return False
+        return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
 
-        lookup = {}
-        for _, r in df.iterrows():
-            lookup.setdefault(r["project_name"], {}) \
-                  .setdefault(r["filename"], {})[r["line_id"]] = r[inference_col]
+    @staticmethod
+    def _get_latest_inference_column(df: pd.DataFrame) -> str:
+        inference_cols = [
+            c for c in df.columns
+            if c.startswith("inference_") and not c.startswith("inference_xml_")
+        ]
+
+        if not inference_cols:
+            raise RuntimeError("No inference column found in inference dataset.")
+
+        return sorted(inference_cols)[-1]
+
+    @classmethod
+    def _build_lookup(cls, df: pd.DataFrame) -> dict:
+        inference_col = cls._get_latest_inference_column(df)
+
+        required_cols = ["project_name", "filename", "line_id", inference_col]
+        missing = [c for c in required_cols if c not in df.columns]
+        if missing:
+            raise RuntimeError(f"Missing required columns for XML writeback: {missing}")
+
+        work_df = df.copy()
+
+        if LINE_AUGMENTATION_COLUMN in work_df.columns:
+            work_df = work_df[
+                work_df[LINE_AUGMENTATION_COLUMN].apply(
+                    cls._is_original_line_augmentation_value
+                )
+            ]
+
+        lookup: dict[str, dict[str, dict[str, str]]] = {}
+
+        key_cols = ["project_name", "filename", "line_id"]
+
+        for key_values, group in work_df.groupby(key_cols, dropna=False):
+            project_name, filename, line_id = [str(v) for v in key_values]
+
+            texts = (
+                group[inference_col]
+                .dropna()
+                .astype(str)
+                .map(str.strip)
+            )
+
+            unique_texts = sorted({text for text in texts if text != ""})
+
+            if len(unique_texts) == 0:
+                continue
+
+            if len(unique_texts) > 1:
+                logger.warning(
+                    f"Ambiguous inference texts for "
+                    f"{project_name}/{filename}/{line_id}: {unique_texts}. "
+                    f"Skipping XML writeback for this line."
+                )
+                continue
+
+            lookup.setdefault(project_name, {}).setdefault(filename, {})[line_id] = unique_texts[0]
+
         return lookup
 
     @staticmethod
@@ -167,14 +228,19 @@ class InferenceToRawXMLWriter:
         updated = False
 
         for i, r in df.iterrows():
-            proj = r["project_name"]
-            fn = r["filename"]
+            proj = str(r["project_name"])
+            fn = str(r["filename"])
 
             if proj not in lookup or fn not in lookup[proj]:
                 continue
 
             xp = XMLProcessor.from_string(r["xml_content"])
-            xp.insert_inferred_lines(xp.root, lookup[proj][fn])
+
+            changed_count = xp.insert_inferred_lines(xp.root, lookup[proj][fn])
+
+            if changed_count == 0:
+                continue
+
             df.at[i, new_col] = xp.tree_to_string()
             updated = True
 

@@ -60,6 +60,51 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
             {"p1": {"a.xml": {"l1": "A", "l2": "B"}}},
         )
 
+    def test_build_lookup_skips_augmented_rows(self):
+        df = pd.DataFrame({
+            "project_name": ["p1", "p1", "p1"],
+            "filename": ["a.xml", "a.xml", "a.xml"],
+            "line_id": ["l1", "l1", "l2"],
+            "line_augmentation": ["original", '{"erosion": 3}', "original"],
+            "inference_test": ["ORIGINAL_L1", "AUGMENTED_L1", "ORIGINAL_L2"],
+        })
+
+        lookup = self.writer._build_lookup(df)
+
+        self.assertEqual(
+            lookup,
+            {"p1": {"a.xml": {"l1": "ORIGINAL_L1", "l2": "ORIGINAL_L2"}}},
+        )
+
+    def test_build_lookup_skips_ambiguous_duplicate_inference_keys(self):
+        df = pd.DataFrame({
+            "project_name": ["p1", "p1"],
+            "filename": ["a.xml", "a.xml"],
+            "line_id": ["l1", "l1"],
+            "line_augmentation": ["original", "original"],
+            "inference_test": ["FIRST", "SECOND"],
+        })
+
+        lookup = self.writer._build_lookup(df)
+
+        self.assertEqual(lookup, {})
+
+    def test_build_lookup_keeps_duplicate_inference_keys_when_text_is_identical(self):
+        df = pd.DataFrame({
+            "project_name": ["p1", "p1"],
+            "filename": ["a.xml", "a.xml"],
+            "line_id": ["l1", "l1"],
+            "line_augmentation": ["original", "original"],
+            "inference_test": ["SAME", "SAME"],
+        })
+
+        lookup = self.writer._build_lookup(df)
+
+        self.assertEqual(
+            lookup,
+            {"p1": {"a.xml": {"l1": "SAME"}}},
+        )
+
     # --------------------------------------------------
     # UNIT TEST: UPDATE DF WITH INFERENCE XML
     # --------------------------------------------------
@@ -75,10 +120,28 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         updated, cols = self.writer._update_df(df, lookup, new_col)
 
-        self.assertEqual(len(cols), 1)
-        self.assertEqual(cols[0], new_col)
-        self.assertIn("HELLO", updated.iloc[0][cols[0]])
-        self.assertIn("<TextEquiv>", updated.iloc[0][cols[0]])
+        self.assertEqual(cols, [new_col])
+
+        xml = updated.iloc[0][new_col]
+        self.assertIn("HELLO", xml)
+        self.assertIn("TextEquiv", xml)
+        self.assertIn("Unicode", xml)
+
+    def test_update_df_returns_no_updated_columns_when_no_line_matches(self):
+        df = pd.DataFrame({
+            "project_name": ["p1"],
+            "filename": ["a.xml"],
+            "xml_content": [SAMPLE_XML],
+        })
+
+        lookup = {"p1": {"a.xml": {"does_not_exist": "HELLO"}}}
+        new_col = "inference_xml_20260418_214612_123456_from_test_repo"
+
+        updated, cols = self.writer._update_df(df, lookup, new_col)
+
+        self.assertEqual(cols, [])
+        self.assertIn(new_col, updated.columns)
+        self.assertEqual(updated.iloc[0][new_col], "")
 
     # --------------------------------------------------
     # UNIT TEST: BUILD INFERENCE XML COLUMN NAME
@@ -109,16 +172,19 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         inf_parquet = fake_inf / "data/train/000.parquet"
         inf_parquet.parent.mkdir(parents=True, exist_ok=True)
 
+        # RAW XML parquet
         pd.DataFrame({
             "project_name": ["p1"],
             "filename": ["a.xml"],
             "xml_content": [SAMPLE_XML],
         }).to_parquet(raw_parquet)
 
+        # INFERENCE parquet
         pd.DataFrame({
             "project_name": ["p1"],
             "filename": ["a.xml"],
             "line_id": ["l1"],
+            "line_augmentation": ["original"],
             "inference_test": ["HELLO"],
         }).to_parquet(inf_parquet)
 
@@ -140,6 +206,21 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         self.assertTrue(any(p.endswith(".parquet") for p in paths))
         self.assertIn("README.md", paths)
 
+        # Check committed parquet content
+        parquet_ops = [op for op in commit_ops if op.path_in_repo.endswith(".parquet")]
+        self.assertTrue(parquet_ops)
+
+        written_df = pd.read_parquet(parquet_ops[0].path_or_fileobj)
+        inference_xml_cols = [c for c in written_df.columns if c.startswith("inference_xml_")]
+
+        self.assertTrue(inference_xml_cols)
+
+        written_xml = written_df.iloc[0][inference_xml_cols[0]]
+        self.assertIn("HELLO", written_xml)
+        self.assertIn("TextEquiv", written_xml)
+        self.assertIn("Unicode", written_xml)
+
+        # Check README content
         readme_ops = [op for op in commit_ops if op.path_in_repo == "README.md"]
         self.assertEqual(len(readme_ops), 1)
 
@@ -195,6 +276,16 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
             values = df[inference_xml_cols[0]].fillna("").astype(str).str.strip()
             self.assertTrue(values.ne("").any(), "Uploaded inference_xml_ column is empty.")
+
+            non_empty_values = values[values.ne("")]
+            self.assertTrue(
+                non_empty_values.str.contains("TextEquiv", regex=False).any(),
+                "Uploaded inference_xml_ column does not contain TextEquiv.",
+            )
+            self.assertTrue(
+                non_empty_values.str.contains("Unicode", regex=False).any(),
+                "Uploaded inference_xml_ column does not contain Unicode.",
+            )
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
