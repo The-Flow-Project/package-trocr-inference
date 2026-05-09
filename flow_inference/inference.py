@@ -220,20 +220,21 @@ class Inference:
 
         for result in inference_result:
             try:
-                project, filename, line_id, inferred_text = result.split("\t", 3)
-                key = (project, filename, line_id)
+                project, filename, line_id, inferred_text = result
 
+                key = (project, filename, line_id)
                 inferred_lines.setdefault(key, []).append(inferred_text)
 
                 self.statusManager.update_progress(
                     status_type="success",
-                    current_item_name=f"{project}:{line_id}"
+                    current_item_name=f"{project}:{line_id}",
                 )
+
             except ValueError as ve:
                 logger.error(f"Malformed inference result: {result} - Error: {ve}")
                 self.statusManager.update_progress(
                     status_type="failure_inference",
-                    current_item_name="unknown_line_id"
+                    current_item_name="unknown_line_id",
                 )
 
         return inferred_lines

@@ -108,27 +108,38 @@ class TestInferenceHandler(unittest.TestCase):
             f"Expected {expected_num_predictions} predictions, got {len(predictions)}",
         )
 
-        for prediction in predictions:
-            self.assertIsInstance(prediction, str, "Expected each prediction to be a string")
-            self.assertIn("\t", prediction, "Prediction format is incorrect: missing tab separator")
+        valid_keys = {
+            (
+                str(r["project_name"]),
+                str(r["filename"]),
+                str(r["line_id"]),
+            )
+            for r in self.records
+        }
 
-            project, filename, line_id, pred_text = prediction.split("\t", 3)
+        for prediction in predictions:
+            self.assertIsInstance(
+                prediction,
+                tuple,
+                "Expected each prediction to be a tuple",
+            )
+            self.assertEqual(
+                len(prediction),
+                4,
+                "Expected prediction tuple: (project_name, filename, line_id, predicted_text)",
+            )
+
+            project, filename, line_id, pred_text = prediction
 
             self.assertIsInstance(project, str, "Expected project to be a string")
             self.assertIsInstance(filename, str, "Expected filename to be a string")
             self.assertIsInstance(line_id, str, "Expected line_id to be a string")
             self.assertIsInstance(pred_text, str, "Expected predicted text to be a string")
 
-            # composite-key validation
-            valid_keys = {
-                (r["project_name"], r["filename"], r["line_id"])
-                for r in self.records
-            }
-
             self.assertIn(
                 (project, filename, line_id),
                 valid_keys,
-                "Inference output (project, filename, line_id) not found in input records"
+                "Inference output (project, filename, line_id) not found in input records",
             )
 
 

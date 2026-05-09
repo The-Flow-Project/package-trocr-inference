@@ -62,7 +62,7 @@ class InferenceHandler:
                             device: torch.device,
                             processor: TrOCRProcessor,
                             max_new_tokens: int = 100
-                            ) -> List[str]:
+                            ) -> List[tuple[str, str, str, str]]:
         """
         Run batch inference.
 
@@ -113,7 +113,7 @@ class InferenceHandler:
                 project_names = batch["project_names"]
 
                 inferred_txt.extend(
-                    "\t".join((project, filename, str(line_id), pred))
+                    (str(project), str(filename), str(line_id), str(pred))
                     for project, filename, line_id, pred
                     in zip(project_names, filenames, line_ids, pred_str)
                 )
