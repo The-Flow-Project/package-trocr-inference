@@ -69,7 +69,8 @@ class Evaluation:
     # --------------------------------------------------------------------------
     @staticmethod
     def _find_latest_inference_column(df: pd.DataFrame) -> str:
-        cols = [col for col in df.columns if col.startswith("inference_")]
+        cols = [col for col in df.columns if col.startswith("inference_")
+                and not col.startswith("inference_xml_")]
         if not cols:
             raise ValueError("No inference column found.")
 
@@ -96,20 +97,27 @@ class Evaluation:
     def _filter_eval_rows(df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
         """
         Keep only rows where both GT and prediction exist.
+        If line_augmentation exists, evaluate only original rows.
         """
         if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
         if inference_col not in df.columns:
             raise ValueError(f"Inference column '{inference_col}' not found.")
 
-        gt = df["text"].fillna("").astype(str).str.strip()
-        hyp = df[inference_col].fillna("").astype(str).str.strip()
+        work_df = df.copy()
 
-        df_eval = df[(gt != "") & (hyp != "")].copy()
+        if "line_augmentation" in work_df.columns:
+            aug = work_df["line_augmentation"].fillna("").astype(str).str.strip().str.lower()
+            work_df = work_df[aug == "original"].copy()
+
+        gt = work_df["text"].fillna("").astype(str).str.strip()
+        hyp = work_df[inference_col].fillna("").astype(str).str.strip()
+
+        df_eval = work_df[(gt != "") & (hyp != "")].copy()
 
         logger.info(
             f"Evaluation rows: {len(df_eval)} / {len(df)} "
-            f"(non-empty GT + non-empty prediction)"
+            f"(original rows with non-empty GT + non-empty prediction)"
         )
 
         if len(df_eval) == 0:
