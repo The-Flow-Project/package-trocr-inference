@@ -17,7 +17,7 @@ class TestInference(unittest.TestCase):
     def setUp(self):
         """Set up an Inference instance configured for a small HF dataset."""
         load_dotenv()
-        self.download_repo_name = os.getenv("TEST_REPO_PUBLIC_EXTERNAL")
+        self.download_repo_name = os.getenv("HUGGINGFACE_DOWNLOAD_REPO_NAME")
         self.hf_token = os.getenv("HUGGINGFACE_TOKEN_READ")
         self.write_token = os.getenv("HUGGINGFACE_TOKEN_READ_WRITE")
         self.test_repo = os.getenv("HUGGINGFACE_TEST_UPLOAD_REPO_NAME")
@@ -25,7 +25,7 @@ class TestInference(unittest.TestCase):
         self.inference = Inference(
             download_repo_name=self.download_repo_name,
             hf_token=self.write_token,
-            trocr_model="microsoft/trocr-small-handwritten",
+            trocr_model="microsoft/trocr-small-printed",
             stop_on_fail=False,
             push_to_hub=False
         )
@@ -253,7 +253,7 @@ class TestInference(unittest.TestCase):
             inference = Inference(
                 download_repo_name=self.download_repo_name,
                 hf_token=self.write_token,
-                trocr_model="microsoft/trocr-small-handwritten",
+                trocr_model="microsoft/trocr-small-printed",
                 stop_on_fail=False,
                 push_to_hub=True,
                 upload_repo_name=target_repo,
@@ -628,7 +628,7 @@ class TestInference(unittest.TestCase):
         inference = Inference(
             download_repo_name="same/source-repo",
             hf_token="TOKEN",
-            trocr_model="microsoft/trocr-small-handwritten",
+            trocr_model="microsoft/trocr-small-printed",
             stop_on_fail=False,
             push_to_hub=True,
             upload_repo_name=None,
