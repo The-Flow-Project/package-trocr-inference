@@ -25,52 +25,58 @@ class ModelManager:
 
         print(f"Using device: {self.device}")
 
-    def load_model(self, model_name: str) -> Union[PreTrainedModel, None]:
+    def load_model(self, model_name: str) -> PreTrainedModel:
         """
         Load the TrOCR model.
 
-        :param: model_name: Name or path of the TrOCR model.
-        :return: PreTrainedModel: The loaded model (a VisionEncoderDecoderModel) or None if it was not loaded.
+        :param model_name: Name or path of the TrOCR model.
+        :return: Loaded VisionEncoderDecoderModel.
         """
-        if model_name:
-            try:
-                logger.info(f"Loading model: {model_name}")
-                model = VisionEncoderDecoderModel.from_pretrained(model_name)
-                model.to(self.device)
-                logger.info(f"Model loaded and moved to {self.device}")
-                return model
-            except (OSError, ValueError) as e:
-                logger.error(f"Failed to load model '{model_name}': {e}")
-                return None
-        else:
-            logger.error(f"The model with name '{model_name}' could not be loaded.")
-            raise ValueError(f"The model with name '{model_name}' could not be loaded.")
+        if not model_name:
+            raise ValueError("Model name must not be empty.")
+
+        try:
+            logger.info(f"Loading model: {model_name}")
+            model = VisionEncoderDecoderModel.from_pretrained(model_name)
+            model.to(self.device)
+            model.eval()
+            logger.info(f"Model loaded and moved to {self.device}")
+            return model
+        except (OSError, ValueError) as e:
+            logger.error(f"Failed to load model '{model_name}': {e}")
+            raise
 
     @staticmethod
-    def load_processor(processor_name: str) -> Union[TrOCRProcessor, None]:
-        """
-        Load the TrOCR processor dynamically. Falls back to 'microsoft/trocr-base-handwritten' if loading fails.
+    def load_processor(processor_name: str) -> TrOCRProcessor:
+        if not processor_name:
+            raise ValueError("processor_name must not be empty.")
 
-        :param: processor_name: Name or path of the TrOCR processor.
-        :return: TrOCRProcessor: The loaded TrOCR processor or None (in case of failure).
-        """
-        fallback_processor = "microsoft/trocr-base-handwritten"
+        errors = []
 
-        if processor_name:
+        for use_fast in (True, False):
             try:
-                logger.info(f"Loading processor: {processor_name}")
-                processor = TrOCRProcessor.from_pretrained(processor_name)
-                logger.info(f"Processor {processor_name} loaded.")
+                logger.info(
+                    f"Loading processor: {processor_name} "
+                    f"(use_fast={use_fast})"
+                )
+                processor = TrOCRProcessor.from_pretrained(
+                    processor_name,
+                    use_fast=use_fast,
+                )
+                logger.info(
+                    f"Processor {processor_name} loaded "
+                    f"(use_fast={use_fast})."
+                )
                 return processor
-            except (OSError, ValueError) as e:
-                logger.error(f"Failed to load processor '{processor_name}': {e}")
+            except Exception as e:
+                errors.append((use_fast, e))
+                logger.warning(
+                    f"Could not load processor '{processor_name}' "
+                    f"with use_fast={use_fast}: {e}"
+                )
 
-        # Fallback to the default processor
-        try:
-            logger.info(f"Falling back to default processor: {fallback_processor}")
-            processor = TrOCRProcessor.from_pretrained(fallback_processor)
-            logger.info(f"Default processor {fallback_processor} loaded.")
-            return processor
-        except (OSError, ValueError) as e:
-            logger.error(f"Failed to load fallback processor '{fallback_processor}': {e}")
-            return None
+        raise RuntimeError(
+            f"Failed to load processor '{processor_name}' with both "
+            f"fast and slow tokenizer paths:\n"
+            + "\n".join(f"use_fast={uf}: {repr(err)}" for uf, err in errors)
+        )
