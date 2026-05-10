@@ -133,7 +133,7 @@ class InferenceHandler:
               records: List[dict],
               image_handler: ImageHandler,
               **kwargs,
-              ) -> List[str]:
+              ) -> List[tuple[str, str, str, str]]:
         """
         Run the inference for a dataset.
 
@@ -141,13 +141,13 @@ class InferenceHandler:
         :param: image_handler: ImageHandler instance.
         :return: list of inference results (for batches).
         """
-        max_new_tokens = kwargs.get('max_new_tokens', 100)
+        max_new_tokens = kwargs.get('max_new_tokens', 64)
         batch_size = kwargs.get('batch_size', 8)
         num_workers = kwargs.get("num_workers", 0)
 
         if not records:
-            logger.error("No file names provided for inference.")
-            raise ValueError("No file names provided for inference.")
+            logger.error("No records provided for inference.")
+            return []
 
         if not isinstance(image_handler, ImageHandler):
             logger.error(f"Invalid type for image_handler: expected ImageHandler, got {type(image_handler)}")
