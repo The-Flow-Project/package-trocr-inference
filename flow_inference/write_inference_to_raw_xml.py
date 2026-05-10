@@ -11,10 +11,15 @@ ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
 
 
 class InferenceToRawXMLWriter:
-    def __init__(self, raw_xml_repo: str, inference_repo: str, token: str):
+    def __init__(self,
+                 raw_xml_repo: str,
+                 inference_repo: str,
+                 token: str,
+                 allow_source_repo_update: bool = False):
         self.raw_xml_repo = raw_xml_repo
         self.inference_repo = inference_repo
         self.token = token
+        self.allow_source_repo_update = allow_source_repo_update
 
     # ------------------------------------------------------------
     # Pipeline
@@ -23,6 +28,12 @@ class InferenceToRawXMLWriter:
         api = HfApi()
 
         target_repo = output_repo or self.raw_xml_repo
+
+        if target_repo == self.raw_xml_repo and not self.allow_source_repo_update:
+            raise RuntimeError("Refusing to upload into the source raw XML repo")
+
+        if target_repo == self.inference_repo:
+            raise RuntimeError("Refusing to upload into the inference source repo")
 
         # --------------------------------------------------
         # 1. Load inference
