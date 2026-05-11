@@ -106,14 +106,16 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
         }
 
     def _make_builder(
-        self,
-        tmp_path: Path,
+            self,
+            tmp_path: Path,
+            duplicate_info: dict[str, dict[str, int]] | None = None,
     ) -> HuggingFaceReadmeBuilder:
         return HuggingFaceReadmeBuilder(
             repo_id="user/my-dataset",
             dataset=self._make_dataset_dict(),
             dataframes=self._make_dataframes(),
             parquet_paths=self._make_parquet_paths(tmp_path),
+            duplicate_info=duplicate_info,
         )
 
     # -------------------------------------------------------------
@@ -123,15 +125,25 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
 
+            duplicate_info = {
+                "train": {
+                    "duplicate_rows": 2,
+                    "duplicate_groups": 1,
+                    "duplicate_excess_rows": 1,
+                }
+            }
+
             builder = HuggingFaceReadmeBuilder.from_handler(
                 repo_id="user/my-dataset",
                 dataset=self._make_dataset_dict(),
                 dataframes=self._make_dataframes(),
-                parquet_paths=self._make_parquet_paths(tmp_path)
+                parquet_paths=self._make_parquet_paths(tmp_path),
+                duplicate_info=duplicate_info,
             )
 
             self.assertIsInstance(builder, HuggingFaceReadmeBuilder)
             self.assertEqual(builder.repo_id, "user/my-dataset")
+            self.assertEqual(builder.duplicate_info, duplicate_info)
 
     # -------------------------------------------------------------
     # UNIT TEST: GET SPLITS INFO
@@ -231,6 +243,7 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
             self.assertEqual(stats.total_bytes, 30)
             self.assertEqual(stats.projects, ["proj_a", "proj_b", "proj_c"])
             self.assertIn("inference_2024_model_x", stats.features)
+            self.assertEqual(stats.duplicate_info, {})
 
     # -------------------------------------------------------------
     # UNIT TEST: FEATURE DTYPE TO OBJECT - BASIC CASE
@@ -376,6 +389,98 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
             self.assertIn("license: mit", readme)
             self.assertIn("### Projects Included", readme)
             self.assertIn("proj_a, proj_b, proj_c", readme)
+
+    # -------------------------------------------------------------
+    # UNIT TEST: RENDER DUPLICATE INFO INCLUDED IN STATS
+    # -------------------------------------------------------------
+
+    def test_build_stats_includes_duplicate_info(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            duplicate_info = {
+                "train": {
+                    "duplicate_rows": 2,
+                    "duplicate_groups": 1,
+                    "duplicate_excess_rows": 1,
+                },
+                "test": {
+                    "duplicate_rows": 0,
+                    "duplicate_groups": 0,
+                    "duplicate_excess_rows": 0,
+                },
+            }
+
+            builder = self._make_builder(
+                Path(tmp_dir),
+                duplicate_info=duplicate_info,
+            )
+            stats = builder._build_stats()
+
+            self.assertEqual(stats.duplicate_info, duplicate_info)
+
+    def test_render_duplicate_line_section_returns_empty_without_duplicate_info(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            builder = self._make_builder(Path(tmp_dir))
+            stats = builder._build_stats()
+
+            self.assertEqual(builder._render_duplicate_line_section(stats), [])
+
+    def test_render_duplicate_line_section_contains_duplicate_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            duplicate_info = {
+                "train": {
+                    "duplicate_rows": 2,
+                    "duplicate_groups": 1,
+                    "duplicate_excess_rows": 1,
+                },
+                "test": {
+                    "duplicate_rows": 3,
+                    "duplicate_groups": 1,
+                    "duplicate_excess_rows": 2,
+                },
+            }
+
+            builder = self._make_builder(
+                Path(tmp_dir),
+                duplicate_info=duplicate_info,
+            )
+            stats = builder._build_stats()
+            lines = builder._render_duplicate_line_section(stats)
+            text = "\n".join(lines)
+
+            self.assertIn("## Duplicate Line Information", text)
+            self.assertIn("**Duplicate rows**: 5", text)
+            self.assertIn("**Duplicate groups**: 2", text)
+            self.assertIn("**Duplicate excess rows**: 3", text)
+            self.assertIn("**train**: 2 duplicate rows, 1 duplicate groups, 1 duplicate excess rows", text)
+            self.assertIn("**test**: 3 duplicate rows, 1 duplicate groups, 2 duplicate excess rows", text)
+            self.assertIn("`filename`, `region_id`, and `line_id`", text)
+
+    def test_render_includes_duplicate_line_section_when_duplicate_info_is_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            duplicate_info = {
+                "train": {
+                    "duplicate_rows": 2,
+                    "duplicate_groups": 1,
+                    "duplicate_excess_rows": 1,
+                },
+                "test": {
+                    "duplicate_rows": 0,
+                    "duplicate_groups": 0,
+                    "duplicate_excess_rows": 0,
+                },
+            }
+
+            builder = self._make_builder(
+                Path(tmp_dir),
+                duplicate_info=duplicate_info,
+            )
+            readme = builder.render()
+
+            self.assertIn("## Duplicate Line Information", readme)
+            self.assertIn("- **Duplicate rows**: 2", readme)
+            self.assertIn("- **Duplicate groups**: 1", readme)
+            self.assertIn("- **Duplicate excess rows**: 1", readme)
+            self.assertIn("- **train**: 2 duplicate rows, 1 duplicate groups, 1 duplicate excess rows", readme)
 
 
 if __name__ == "__main__":

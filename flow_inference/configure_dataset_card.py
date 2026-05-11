@@ -14,6 +14,7 @@ class ReadmeStats:
     total_bytes: int
     projects: list[str]
     features: Features
+    duplicate_info: dict[str, dict[str, int]]
 
 
 class HuggingFaceReadmeBuilder:
@@ -26,6 +27,7 @@ class HuggingFaceReadmeBuilder:
             source_repos: list[str] | None = None,
             description_text: str | None = None,
             evaluation_info: dict[str, Any] | None = None,
+            duplicate_info: dict[str, dict[str, int]] | None = None,
             tags: list[str] | None = None,
             license_name: str = "mit",
     ):
@@ -35,6 +37,7 @@ class HuggingFaceReadmeBuilder:
         self.parquet_paths = parquet_paths
         self.source_repos = source_repos or []
         self.description_text = description_text
+        self.duplicate_info = duplicate_info or {}
         self.evaluation_info = evaluation_info
         self.tags = tags or ["image-to-text", "htr", "trocr", "inference", "pagexml"]
         self.license_name = license_name
@@ -48,6 +51,7 @@ class HuggingFaceReadmeBuilder:
             parquet_paths: dict[str, list[str]],
             source_repos: list[str] | None = None,
             evaluation_info: dict[str, Any] | None = None,
+            duplicate_info: dict[str, dict[str, int]] | None = None,
     ) -> "HuggingFaceReadmeBuilder":
         return cls(
             repo_id=repo_id,
@@ -56,6 +60,7 @@ class HuggingFaceReadmeBuilder:
             parquet_paths=parquet_paths,
             source_repos=source_repos,
             evaluation_info=evaluation_info,
+            duplicate_info=duplicate_info,
         )
 
     def _get_splits_info(self) -> dict[str, int]:
@@ -120,7 +125,55 @@ class HuggingFaceReadmeBuilder:
             total_bytes=total_bytes,
             projects=projects,
             features=features,
+            duplicate_info=self.duplicate_info,
         )
+
+    def _render_duplicate_line_section(self, stats: ReadmeStats) -> list[str]:
+        if not stats.duplicate_info:
+            return []
+
+        total_duplicate_rows = sum(
+            info.get("duplicate_rows", 0)
+            for info in stats.duplicate_info.values()
+        )
+        total_duplicate_groups = sum(
+            info.get("duplicate_groups", 0)
+            for info in stats.duplicate_info.values()
+        )
+        total_duplicate_excess_rows = sum(
+            info.get("duplicate_excess_rows", 0)
+            for info in stats.duplicate_info.values()
+        )
+
+        lines = [
+            "## Duplicate Line Information",
+            "",
+            "Duplicate line statistics are calculated from the dataset key columns "
+            "`filename`, `region_id`, and `line_id`, plus `project_name` when project metadata is available.",
+            "",
+            "Only original rows are counted here.",
+            "",
+            f"- Duplicate rows: {total_duplicate_rows:,}",
+            f"- Duplicate groups: {total_duplicate_groups:,}",
+            f"- Duplicate excess rows: {total_duplicate_excess_rows:,}",
+            "",
+        ]
+
+        lines.extend([
+            "### Duplicate Lines by Split",
+            "",
+        ])
+
+        for split_name, info in stats.duplicate_info.items():
+            lines.append(
+                f"- **{split_name}**: "
+                f"{info.get('duplicate_rows', 0):,} duplicate rows, "
+                f"{info.get('duplicate_groups', 0):,} duplicate groups, "
+                f"{info.get('duplicate_excess_rows', 0):,} duplicate excess rows"
+            )
+
+        lines.append("")
+        return lines
 
     def _build_description(self) -> str:
         if self.description_text:
@@ -277,6 +330,8 @@ class HuggingFaceReadmeBuilder:
             ", ".join(stats.projects) if stats.projects else "No project metadata available.",
             "",
         ]
+
+        lines.extend(self._render_duplicate_line_section(stats))
 
         lines.extend(self._render_evaluation_section())
 

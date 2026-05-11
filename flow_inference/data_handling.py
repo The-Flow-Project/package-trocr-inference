@@ -237,7 +237,7 @@ class HuggingFaceDataHandler:
         Count only duplicate rows beyond the first occurrence.
 
         Example:
-            3 rows with the same project_name + filename + line_id count as:
+            3 rows with the same project_name + filename + region_id + line_id count as:
                 duplicate rows: 3
                 duplicate groups: 1
                 duplicate excess rows: 2
@@ -821,6 +821,7 @@ class HuggingFaceDataHandler:
             dataframes=self.df,
             parquet_paths=self.parquet_paths,
             source_repos=[self.dataset_name],
+            duplicate_info=self.count_real_duplicate_lines_by_split(self.df),
         )
 
         text = builder.render()
