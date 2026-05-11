@@ -34,24 +34,27 @@ class InferenceHandler:
     def custom_collate_fn(batch: List[Dict[str, Union[torch.Tensor, str]]]) \
             -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
-        Custom collate function to stack images and file name.
+        Custom collate function to stack image tensors and preserve metadata keys.
 
         :param batch: list of dictionaries with keys 'pixel_values' and 'file_name'.
-        :return: dictionary with keys 'pixel_values' and 'filenames'.
+        :return: dictionary with pixel_values, filenames, region_ids, line_ids, and project_names.
         """
         try:
-            pixel_values = [item['pixel_values'] for item in batch]
-            filenames = [item['filename'] for item in batch]
-            line_ids = [item['line_id'] for item in batch]
-            project_names = [item['project_name'] for item in batch]
+            pixel_values = [item["pixel_values"] for item in batch]
+            filenames = [item["filename"] for item in batch]
+            region_ids = [item["region_id"] for item in batch]
+            line_ids = [item["line_id"] for item in batch]
         except KeyError as e:
             raise KeyError(f"Missing expected key in batch item: {e}")
+
+        project_names = [item.get("project_name", "") for item in batch]
 
         # stack action
         pixel_values = torch.stack(pixel_values)
 
         return {'pixel_values': pixel_values,
                 'filenames': filenames,
+                "region_ids": region_ids,
                 'line_ids': line_ids,
                 'project_names': project_names
                 }
@@ -62,7 +65,7 @@ class InferenceHandler:
                             device: torch.device,
                             processor: TrOCRProcessor,
                             max_new_tokens: int = 100
-                            ) -> List[tuple[str, str, str, str]]:
+                            ) -> List[tuple[str, str, str, str, str]]:
         """
         Run batch inference.
 
@@ -109,13 +112,20 @@ class InferenceHandler:
                     raise ValueError(f"Error decoding predictions: {e}")
 
                 line_ids = batch["line_ids"]
+                region_ids = batch["region_ids"]
                 filenames = batch["filenames"]
                 project_names = batch["project_names"]
 
                 inferred_txt.extend(
-                    (str(project), str(filename), str(line_id), str(pred))
-                    for project, filename, line_id, pred
-                    in zip(project_names, filenames, line_ids, pred_str)
+                    (
+                        str(project),
+                        str(filename),
+                        str(region_id),
+                        str(line_id),
+                        str(pred),
+                    )
+                    for project, filename, region_id, line_id, pred
+                    in zip(project_names, filenames, region_ids, line_ids, pred_str)
                 )
 
                 total_lines += len(pred_str)
@@ -133,7 +143,7 @@ class InferenceHandler:
               records: List[dict],
               image_handler: ImageHandler,
               **kwargs,
-              ) -> List[tuple[str, str, str, str]]:
+              ) -> List[tuple[str, str, str, str, str]]:
         """
         Run the inference for a dataset.
 

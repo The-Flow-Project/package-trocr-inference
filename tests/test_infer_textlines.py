@@ -43,6 +43,7 @@ class TestInferenceHandler(unittest.TestCase):
         # take 2 samples for speed
         self.records = all_records[:2]
         assert "line_id" in self.records[0], "Test records must include line_id"
+        assert "region_id" in self.records[0], "Test records must include region_id"
 
         image_obj = self.records[0].get("image")
         if isinstance(image_obj, dict) and "bytes" in image_obj:
@@ -78,8 +79,10 @@ class TestInferenceHandler(unittest.TestCase):
         self.assertIn("pixel_values", batch)
         self.assertIn("filenames", batch)
         self.assertIn("line_ids", batch)
+        self.assertIn("region_ids", batch)
 
         self.assertEqual(len(batch["line_ids"]), len(self.records))
+        self.assertEqual(len(batch["region_ids"]), len(self.records))
 
     def test_inference(self):
         """Run inference on a small batch of in-memory HF records and validate structure."""
@@ -110,8 +113,9 @@ class TestInferenceHandler(unittest.TestCase):
 
         valid_keys = {
             (
-                str(r["project_name"]),
+                str(r.get("project_name", "")),
                 str(r["filename"]),
+                str(r["region_id"]),
                 str(r["line_id"]),
             )
             for r in self.records
@@ -125,21 +129,22 @@ class TestInferenceHandler(unittest.TestCase):
             )
             self.assertEqual(
                 len(prediction),
-                4,
-                "Expected prediction tuple: (project_name, filename, line_id, predicted_text)",
+                5,
+                "Expected prediction tuple: (project_name, filename, region_id, line_id, predicted_text)",
             )
 
-            project, filename, line_id, pred_text = prediction
+            project, filename, region_id, line_id, pred_text = prediction
 
             self.assertIsInstance(project, str, "Expected project to be a string")
             self.assertIsInstance(filename, str, "Expected filename to be a string")
             self.assertIsInstance(line_id, str, "Expected line_id to be a string")
             self.assertIsInstance(pred_text, str, "Expected predicted text to be a string")
+            self.assertIsInstance(region_id, str, "Expected region_id to be a string")
 
             self.assertIn(
-                (project, filename, line_id),
+                (project, filename, region_id, line_id),
                 valid_keys,
-                "Inference output (project, filename, line_id) not found in input records",
+                "Inference output (project, filename, region_id, line_id) not found in input records",
             )
 
 

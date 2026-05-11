@@ -112,8 +112,20 @@ class HuggingFaceDataHandler:
         return len(paths) > 0
 
     @staticmethod
-    def _key_columns_for_df(df: pd.DataFrame) -> list[str]:
-        key = ["project_name", "filename", "line_id"]
+    def _has_usable_project_name(df: pd.DataFrame) -> bool:
+        if "project_name" not in df.columns:
+            return False
+
+        return df["project_name"].fillna("").astype(str).str.strip().ne("").any()
+
+    @classmethod
+    def _key_columns_for_df(cls, df: pd.DataFrame) -> list[str]:
+        key = []
+
+        if cls._has_usable_project_name(df):
+            key.append("project_name")
+
+        key.extend(["filename", "region_id", "line_id"])
 
         if LINE_AUGMENTATION_COLUMN in df.columns:
             key.append(LINE_AUGMENTATION_COLUMN)
@@ -138,20 +150,21 @@ class HuggingFaceDataHandler:
         )
         return df_with_occurrence
 
-    @classmethod
-    def _update_index_columns_for_df(cls, df: pd.DataFrame) -> list[str]:
-        key = cls._key_columns_for_df(df)
-        return key + [_UPDATE_OCCURRENCE_COLUMN]
-
     @staticmethod
     def _is_original_line_augmentation_value(value) -> bool:
         if pd.isna(value):
             return False
         return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
 
-    @staticmethod
-    def _real_duplicate_key_columns() -> list[str]:
-        return ["project_name", "filename", "line_id"]
+    @classmethod
+    def _real_duplicate_key_columns(cls, df: pd.DataFrame) -> list[str]:
+        key = []
+
+        if cls._has_usable_project_name(df):
+            key.append("project_name")
+
+        key.extend(["filename", "region_id", "line_id"])
+        return key
 
     @classmethod
     def _df_for_real_duplicate_check(cls, df: pd.DataFrame) -> pd.DataFrame:
@@ -181,12 +194,13 @@ class HuggingFaceDataHandler:
         """
         Count rows that participate in real duplicate line keys.
 
-        The real duplicate key is always:
-            project_name + filename + line_id
+        The real duplicate key is:
+            filename + region_id + line_id
+        plus project_name when project_name is present and non-empty.
 
         For augmented datasets, only original rows are considered.
         """
-        key = cls._real_duplicate_key_columns()
+        key = cls._real_duplicate_key_columns(df)
 
         for col in key:
             if col not in df.columns:
@@ -206,7 +220,7 @@ class HuggingFaceDataHandler:
                 duplicate rows: 3
                 duplicate groups: 1
         """
-        key = cls._real_duplicate_key_columns()
+        key = cls._real_duplicate_key_columns(df)
 
         for col in key:
             if col not in df.columns:
@@ -228,7 +242,7 @@ class HuggingFaceDataHandler:
                 duplicate groups: 1
                 duplicate excess rows: 2
         """
-        key = cls._real_duplicate_key_columns()
+        key = cls._real_duplicate_key_columns(df)
 
         for col in key:
             if col not in df.columns:
@@ -269,6 +283,19 @@ class HuggingFaceDataHandler:
     @staticmethod
     def _is_inference_column(column: str) -> bool:
         return column.startswith("inference_")
+
+    @classmethod
+    def _validate_required_key_columns(cls, df: pd.DataFrame, context: str) -> None:
+        missing = [
+            col for col in ["filename", "region_id", "line_id"]
+            if col not in df.columns
+        ]
+
+        if missing:
+            raise RuntimeError(
+                f"Missing required key column(s) in {context}: {missing}. "
+                "Required columns are filename, region_id, and line_id."
+            )
 
     @staticmethod
     def _repo_exists(api: HfApi, repo_id: str, token: Optional[str]) -> bool:
@@ -673,7 +700,9 @@ class HuggingFaceDataHandler:
         dfs: Dict[str, pd.DataFrame] = {}
         for split_name in self.dataset.keys():
             logger.info(f"Converting split '{split_name}' to DataFrame...")
-            dfs[split_name] = self.dataset[split_name].to_pandas()
+            df = self.dataset[split_name].to_pandas()
+            self._validate_required_key_columns(df, f"split '{split_name}'")
+            dfs[split_name] = df
 
         self.df = dfs
         self.real_duplicate_counts = self.count_real_duplicate_lines_by_split(dfs)

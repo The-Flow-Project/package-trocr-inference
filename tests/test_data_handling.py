@@ -63,7 +63,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = dfs[split].copy()
         self.assertFalse(df.empty)
 
-        for required in ["project_name", "filename", "line_id"]:
+        for required in ["filename", "region_id", "line_id"]:
             self.assertIn(required, df.columns)
 
         df[inference_col] = ""
@@ -97,8 +97,18 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         def _fake_snapshot_download(*args, **kwargs):
             local_dir = Path(kwargs["local_dir"])
-            df_train = pd.DataFrame({"line_id": ["a", "b"], "x": [1, 2]})
-            df_test = pd.DataFrame({"line_id": ["c", "d"], "x": [3, 4]})
+            df_train = pd.DataFrame({
+                "filename": ["f", "f"],
+                "region_id": ["r", "r"],
+                "line_id": ["a", "b"],
+                "x": [1, 2],
+            })
+            df_test = pd.DataFrame({
+                "filename": ["f", "f"],
+                "region_id": ["r", "r"],
+                "line_id": ["c", "d"],
+                "x": [3, 4],
+            })
 
             self._write_parquet(local_dir / "data/train/docA/train_file.parquet", df_train)
             self._write_parquet(local_dir / "data/test/docB/test_file.parquet", df_test)
@@ -165,8 +175,18 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         def _fake_snapshot_download(*args, **kwargs):
             local_dir = Path(kwargs["local_dir"])
-            df_train = pd.DataFrame({"line_id": ["t1", "t2"], "x": [1, 2]})
-            df_test = pd.DataFrame({"line_id": ["s1", "s2"], "x": [3, 4]})
+            df_train = pd.DataFrame({
+                "filename": ["f", "f"],
+                "region_id": ["r", "r"],
+                "line_id": ["t1", "t2"],
+                "x": [1, 2],
+            })
+            df_test = pd.DataFrame({
+                "filename": ["f", "f"],
+                "region_id": ["r", "r"],
+                "line_id": ["s1", "s2"],
+                "x": [3, 4],
+            })
 
             self._write_parquet(local_dir / "data/train/docA/train.parquet", df_train)
             self._write_parquet(local_dir / "data/test/docB/test.parquet", df_test)
@@ -220,8 +240,18 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         def _fake_snapshot_download(*args, **kwargs):
             local_dir = Path(kwargs["local_dir"])
-            df_train = pd.DataFrame({"line_id": ["t1"], "x": [1]})
-            df_test = pd.DataFrame({"line_id": ["s1"], "x": [2]})
+            df_train = pd.DataFrame({
+                "filename": ["f"],
+                "region_id": ["r"],
+                "line_id": ["t1"],
+                "x": [1],
+            })
+            df_test = pd.DataFrame({
+                "filename": ["f"],
+                "region_id": ["r"],
+                "line_id": ["s1"],
+                "x": [2],
+            })
             self._write_parquet(local_dir / "data/train/docX/a.parquet", df_train)
             self._write_parquet(local_dir / "data/test/docY/b.parquet", df_test)
             return str(local_dir)
@@ -300,12 +330,14 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df_train_orig = pd.DataFrame({
             "project_name": ["docA"] * 3,
             "filename": ["train_file"] * 3,
+            "region_id": ["R1", "R1", "R1"],
             "line_id": ["L1", "L2", "L3"],
             "text": ["", "", ""],
         })
         df_test_orig = pd.DataFrame({
             "project_name": ["docB", "docB", "docB"],
             "filename": ["test_file", "test_file", "test_file"],
+            "region_id": ["R1", "R1", "R1"],
             "line_id": ["T1", "T2", "T3"],
             "text": ["", "", ""],
         })
@@ -333,6 +365,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             "train": pd.DataFrame({
                 "project_name": ["docA", "docA"],
                 "filename": ["train_file", "train_file"],
+                "region_id": ["R1", "R1"],
                 "line_id": ["L2", "L3"],
                 "text": ["hello", "world"],
                 "inference_col": ["pred2", "pred3"],
@@ -340,6 +373,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             "test": pd.DataFrame({
                 "project_name": ["docB"],
                 "filename": ["test_file"],
+                "region_id": ["R1"],
                 "line_id": ["T1"],
                 "text": ["test-hi"],
                 "inference_col": ["predT1"],
@@ -397,6 +431,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df_orig = pd.DataFrame({
             "project_name": ["docA"],
             "filename": ["train_file"],
+            "region_id": ["R1"],
             "line_id": ["L1"],
             "text": [""],
         })
@@ -415,6 +450,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             "train": pd.DataFrame({
                 "project_name": ["docA"],
                 "filename": ["train_file"],
+                "region_id": ["R1"],
                 "line_id": ["L1"],
                 "text": ["updated"],
                 "inference_col": ["pred"],
@@ -445,6 +481,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p"],
             "filename": ["f", "f"],
+            "region_id": ["r", "r"],
             "line_id": ["1", "1"],
             "text": ["old", "new"],
         })
@@ -454,16 +491,53 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         self.assertEqual(len(idx), 2)
         self.assertTrue(idx.index.is_unique)
 
-        self.assertIn(("p", "f", "1", 0), idx.index)
-        self.assertIn(("p", "f", "1", 1), idx.index)
+        self.assertIn(("p", "f", "r", "1", 0), idx.index)
+        self.assertIn(("p", "f", "r", "1", 1), idx.index)
 
-        self.assertEqual(idx.loc[("p", "f", "1", 0), "text"], "old")
-        self.assertEqual(idx.loc[("p", "f", "1", 1), "text"], "new")
+        self.assertEqual(idx.loc[("p", "f", "r", "1", 0), "text"], "old")
+        self.assertEqual(idx.loc[("p", "f", "r", "1", 1), "text"], "new")
+
+    def test_index_df_by_key_works_without_project_name(self):
+        df = pd.DataFrame({
+            "filename": ["f", "f"],
+            "region_id": ["r", "r"],
+            "line_id": ["1", "1"],
+            "text": ["old", "new"],
+        })
+
+        idx = HuggingFaceDataHandler._index_df_by_key(df, "train")
+
+        self.assertEqual(len(idx), 2)
+        self.assertTrue(idx.index.is_unique)
+
+        self.assertIn(("f", "r", "1", 0), idx.index)
+        self.assertIn(("f", "r", "1", 1), idx.index)
+
+        self.assertEqual(idx.loc[("f", "r", "1", 0), "text"], "old")
+        self.assertEqual(idx.loc[("f", "r", "1", 1), "text"], "new")
+
+    def test_index_df_by_key_ignores_empty_project_name_column(self):
+        df = pd.DataFrame({
+            "project_name": ["", ""],
+            "filename": ["f", "f"],
+            "region_id": ["r", "r"],
+            "line_id": ["1", "1"],
+            "text": ["old", "new"],
+        })
+
+        idx = HuggingFaceDataHandler._index_df_by_key(df, "train")
+
+        self.assertEqual(len(idx), 2)
+        self.assertTrue(idx.index.is_unique)
+
+        self.assertIn(("f", "r", "1", 0), idx.index)
+        self.assertIn(("f", "r", "1", 1), idx.index)
 
     def test_index_df_by_composite_key_keeps_augmented_rows_distinct(self):
         df = pd.DataFrame({
             "project_name": ["p", "p"],
             "filename": ["f", "f"],
+            "region_id": ["r", "r"],
             "line_id": ["1", "1"],
             "line_augmentation": ["original", "rotation"],
             "text": ["orig text", "aug text"],
@@ -474,15 +548,15 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
 
         self.assertEqual(len(idx), 2)
 
-        self.assertIn(("p", "f", "1", "original", 0), idx.index)
-        self.assertIn(("p", "f", "1", "rotation", 0), idx.index)
+        self.assertIn(("p", "f", "r", "1", "original", 0), idx.index)
+        self.assertIn(("p", "f", "r", "1", "rotation", 0), idx.index)
 
         self.assertEqual(
-            idx.loc[("p", "f", "1", "original", 0), "text"],
+            idx.loc[("p", "f", "r", "1", "original", 0), "text"],
             "orig text",
         )
         self.assertEqual(
-            idx.loc[("p", "f", "1", "rotation", 0), "text"],
+            idx.loc[("p", "f", "r", "1", "rotation", 0), "text"],
             "aug text",
         )
 
@@ -493,6 +567,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         parquet_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "line_augmentation": ["original", "rotation"],
             "text": ["", ""],
@@ -503,6 +578,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         split_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "line_augmentation": ["original", "rotation"],
             "text": ["original updated", ""],
@@ -535,6 +611,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
             "train": pd.DataFrame({
                 "project_name": ["p"],
                 "filename": ["f"],
+                "region_id": ["r"],
                 "line_id": ["1"],
                 "text": ["new"]
             })
@@ -767,6 +844,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["docA"],
             "filename": ["train_file"],
+            "region_id": ["R1"],
             "line_id": ["L1"],
             "text": ["hello"],
         })
@@ -802,6 +880,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["docA"],
             "filename": ["train_file"],
+            "region_id": ["R1"],
             "line_id": ["L1"],
             "text": ["hello"],
         })
@@ -833,6 +912,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["docA"],
             "filename": ["train_file"],
+            "region_id": ["R1"],
             "line_id": ["L1"],
             "text": ["hello"],
         })
@@ -858,6 +938,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p", "p", "p"],
             "filename": ["f", "f", "f", "f"],
+            "region_id": ["r", "r", "r", "r"],
             "line_id": ["1", "1", "2", "3"],
             "text": ["a", "b", "c", "d"],
         })
@@ -874,6 +955,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p", "p", "p", "p"],
             "filename": ["f", "f", "f", "f", "f"],
+            "region_id": ["r", "r", "r", "r", "r"],
             "line_id": ["1", "1", "1", "2", "2"],
             "line_augmentation": [
                 "original",
@@ -897,6 +979,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p", "p"],
             "filename": ["f", "f", "f"],
+            "region_id": ["r", "r", "r"],
             "line_id": ["1", "1", "1"],
             "line_augmentation": [
                 "original",
@@ -921,6 +1004,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         parquet_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "text": ["old first", "old second"],
         })
@@ -930,6 +1014,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         split_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "text": ["new first", "new second"],
             "inference_col": ["pred first", "pred second"],
@@ -951,6 +1036,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         parquet_df = pd.DataFrame({
             "project_name": ["docA", "docA", "docA"],
             "filename": ["train_file", "train_file", "train_file"],
+            "region_id": ["R1", "R1", "R1"],
             "line_id": ["L1", "L1", "L1"],
             "line_augmentation": ["original", "original", '{"rotation": 1}'],
             "text": ["old original first", "old original second", "old augmented"],
@@ -961,6 +1047,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         split_df = pd.DataFrame({
             "project_name": ["docA", "docA", "docA"],
             "filename": ["train_file", "train_file", "train_file"],
+            "region_id": ["R1", "R1", "R1"],
             "line_id": ["L1", "L1", "L1"],
             "line_augmentation": ["original", "original", '{"rotation": 1}'],
             "text": ["new original first", "new original second", "old augmented"],
@@ -993,6 +1080,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         parquet_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "text": ["old first", "old second"],
         })
@@ -1002,6 +1090,7 @@ class TestHuggingFaceDataHandler(unittest.TestCase):
         split_df = pd.DataFrame({
             "project_name": ["docA", "docA"],
             "filename": ["train_file", "train_file"],
+            "region_id": ["R1", "R1"],
             "line_id": ["L1", "L1"],
             "text": ["new first", "new second"],
             "inference_col": ["pred first", "pred second"],

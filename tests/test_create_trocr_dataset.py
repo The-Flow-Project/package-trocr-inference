@@ -12,12 +12,14 @@ class TestTrOCRInferenceDataset(unittest.TestCase):
             {
                 "image": {"bytes": b"\x89PNG\r\n\x1a\n...", "path": None},
                 "filename": "test_doc_1.png",
-                "line_id": "line_001"
+                "region_id": "region_001",
+                "line_id": "line_001",
             },
             {
                 "image": {"bytes": b"\x89PNG\r\n\x1a\n...", "path": None},
                 "filename": "test_doc_1.png",
-                "line_id": "line_002"
+                "region_id": "region_001",
+                "line_id": "line_002",
             },
         ]
 
@@ -36,10 +38,12 @@ class TestTrOCRInferenceDataset(unittest.TestCase):
         self.assertIn("pixel_values", item)
         self.assertIn("filename", item)
         self.assertIn("line_id", item)
+        self.assertIn("region_id", item)
 
         self.assertEqual(item["pixel_values"], [0.1, 0.2, 0.3])
         self.assertEqual(item["filename"], "test_doc_1.png")
         self.assertEqual(item["line_id"], "line_001")
+        self.assertEqual(item["region_id"], "region_001")
 
         self.mock_image_handler.handle_image.assert_called_once()
         called_record = self.mock_image_handler.handle_image.call_args[0][0]

@@ -34,11 +34,12 @@ class TrOCRInferenceDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         """
-        Retrieve and process an in-memory image and its filename.
+        Retrieve and process an in-memory image and its metadata.
         :param idx: Index of the image to retrieve.
         """
         record = self.records[idx]
         filename = record.get("filename")
+        region_id = record.get("region_id")
         line_id = record.get("line_id")
         project_name = record.get("project_name", "")
 
@@ -50,8 +51,9 @@ class TrOCRInferenceDataset(Dataset):
             return {
                 "pixel_values": pixel_values,
                 "filename": filename,
+                "region_id": region_id,
                 "line_id": line_id,
-                "project_name": project_name
+                "project_name": project_name,
             }
         except ValueError as e:
             logger.error(f"Value error while processing image: {filename}. Error: {e}")

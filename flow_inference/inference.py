@@ -2,7 +2,7 @@
 # IMPORT STATEMENTS
 # ===============================================================================
 from datetime import datetime
-from typing import Optional, Tuple, Dict, List, cast
+from typing import Optional, Tuple, Dict, List, cast, Literal
 from flow_inference.data_handling import HuggingFaceDataHandler
 from flow_inference.image_processing import ImageHandler
 from flow_inference.model_handling import ModelManager
@@ -13,6 +13,7 @@ import pandas as pd
 
 LINE_AUGMENTATION_COLUMN = "line_augmentation"
 ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
+REQUIRED_INFERENCE_KEY_COLUMNS = ["filename", "region_id", "line_id"]
 
 # ===============================================================================
 # CLASS
@@ -28,7 +29,7 @@ class Inference:
                  push_to_hub: bool = True,
                  private_repo: bool = True,
                  upload_repo_name: Optional[str] = None,
-                 upload_mode: str = "new_repo",
+                 upload_mode: Literal["new_repo", "replace", "update"] = "new_repo",
                  allow_source_repo_update: bool = False,
                  ) -> None:
 
@@ -59,6 +60,19 @@ class Inference:
         if pd.isna(value):
             return False
         return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
+
+    @staticmethod
+    def _validate_required_key_columns(df: pd.DataFrame, context: str) -> None:
+        missing = [
+            col for col in REQUIRED_INFERENCE_KEY_COLUMNS
+            if col not in df.columns
+        ]
+
+        if missing:
+            raise RuntimeError(
+                f"Missing required inference key column(s) in {context}: {missing}. "
+                "Required columns are filename, region_id, and line_id."
+            )
 
     def _filter_records_for_inference(self, records: list[dict]) -> list[dict]:
         """
@@ -113,6 +127,8 @@ class Inference:
             loader.download_hf_dataset()
             dfs = loader.to_dataframe()
             records = loader.convert_to_list_of_dicts(dfs)
+            for split, df_split in dfs.items():
+                self._validate_required_key_columns(df_split, f"split '{split}'")
         except Exception as e:
             logger.error(f"Failed to load dataset from Hugging Face: {e}")
             return None
@@ -138,7 +154,7 @@ class Inference:
         # -------------------------------
         logger.debug("Running inference on image records.")
 
-        inferred = {}
+        inferred: Dict[str, Dict[tuple[str, str, str, str], List[str]]] = {}
 
         for split, recs in records_for_inference.items():
             if split in self.requested_splits or split == "default":
@@ -190,7 +206,7 @@ class Inference:
             model,
             processor,
             device
-    ) -> dict[tuple[str, str, str], list[str]]:
+    ) -> dict[tuple[str, str, str, str], list[str]]:
         """
         Run inference on provided image records.
         """
@@ -216,13 +232,13 @@ class Inference:
         logger.info("Inference completed successfully.")
 
         # Parse results
-        inferred_lines: dict[tuple[str, str, str], list[str]] = {}
+        inferred_lines: dict[tuple[str, str, str, str], list[str]] = {}
 
         for result in inference_result:
             try:
-                project, filename, line_id, inferred_text = result
+                project, filename, region_id, line_id, inferred_text = result
 
-                key = (project, filename, line_id)
+                key = (project, filename, region_id, line_id)
                 inferred_lines.setdefault(key, []).append(inferred_text)
 
                 self.statusManager.update_progress(
@@ -244,7 +260,7 @@ class Inference:
     # ===========================================================================
     def write_inference_to_dataframe(
             self,
-            inferred_lines: Dict[tuple[str, str, str], List[str]],
+            inferred_lines: Dict[tuple[str, str, str, str], List[str]],
             original_df: pd.DataFrame
     ) -> pd.DataFrame:
         """
@@ -263,13 +279,24 @@ class Inference:
 
         updated_count = 0
 
-        for (project, filename, line_id), texts in inferred_lines.items():
+        for (project, filename, region_id, line_id), texts in inferred_lines.items():
             mask = cast(
                 pd.Series,
-                (updated_df["project_name"] == project)
-                & (updated_df["filename"] == filename)
-                & (updated_df["line_id"] == line_id)
+                (updated_df["filename"].fillna("").astype(str) == str(filename))
+                & (updated_df["region_id"].fillna("").astype(str) == str(region_id))
+                & (updated_df["line_id"].fillna("").astype(str) == str(line_id))
             )
+
+            if (
+                    "project_name" in updated_df.columns
+                    and str(project).strip()
+                    and updated_df["project_name"].fillna("").astype(str).str.strip().ne("").any()
+            ):
+                mask = cast(
+                    pd.Series,
+                    mask
+                    & (updated_df["project_name"].fillna("").astype(str) == str(project))
+                )
 
             if LINE_AUGMENTATION_COLUMN in updated_df.columns:
                 mask = cast(
@@ -284,14 +311,15 @@ class Inference:
 
             if not matching_indices:
                 logger.warning(
-                    f"No matching row found for project='{project}', filename='{filename}', line_id='{line_id}'"
+                    f"No matching row found for project='{project}', filename='{filename}', "
+                    f"region_id='{region_id}', line_id='{line_id}'"
                 )
                 continue
 
             if len(texts) != len(matching_indices):
                 logger.warning(
                     f"Inference/writeback count mismatch for project='{project}', "
-                    f"filename='{filename}', line_id='{line_id}': "
+                    f"filename='{filename}', region_id='{region_id}', line_id='{line_id}': "
                     f"{len(texts)} predictions for {len(matching_indices)} matching rows. "
                     f"Writing up to the smaller count."
                 )
@@ -304,10 +332,10 @@ class Inference:
         return updated_df
 
     def save_results(self,
-                     inferred_lines: Dict[tuple[str, str, str], List[str]],
+                     inferred_lines: Dict[tuple[str, str, str, str], List[str]],
                      original_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Save inference results: add new column + update raw XML strings.
+        Save inference results: add new column.
         Returns the updated DataFrame.
         """
         logger.info("Saving inference results into DataFrame and updating XML fields.")

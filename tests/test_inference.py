@@ -32,7 +32,7 @@ class TestInference(unittest.TestCase):
 
     @staticmethod
     def _key_columns_for_df(df: pd.DataFrame) -> list[str]:
-        key = ["project_name", "filename", "line_id"]
+        key = ["project_name", "filename", "region_id", "line_id"]
 
         if "line_augmentation" in df.columns:
             key.append("line_augmentation")
@@ -188,13 +188,14 @@ class TestInference(unittest.TestCase):
         self.assertGreater(len(result_dict), 0, "Inference result dictionary is empty")
         for key, value in result_dict.items():
             self.assertIsInstance(key, tuple)
-            self.assertEqual(len(key), 3)
+            self.assertEqual(len(key), 4)
 
-            project, filename, line_id = key
+            project, filename, region_id, line_id = key
 
             self.assertIsInstance(project, str)
             self.assertIsInstance(filename, str)
             self.assertIsInstance(line_id, str)
+            self.assertIsInstance(region_id, str)
             self.assertIsInstance(value, list)
             self.assertGreater(len(value), 0)
 
@@ -202,14 +203,20 @@ class TestInference(unittest.TestCase):
                 self.assertIsInstance(prediction, str)
 
             valid_keys = {
-                (str(r["project_name"]), str(r["filename"]), str(r["line_id"]))
+                (
+                    str(r.get("project_name", "")),
+                    str(r["filename"]),
+                    str(r["region_id"]),
+                    str(r["line_id"]),
+                )
                 for r in records
             }
 
             self.assertIn(
-                (str(project), str(filename), str(line_id)),
+                (str(project), str(filename), str(region_id), str(line_id)),
                 valid_keys,
-                "Inference result key is not a (project_name, filename, line_id) tuple from filtered input records"
+                "Inference result key is not a (project_name, filename, region_id, line_id) tuple "
+                "from filtered input records"
             )
 
     def test_full_inference_with_upload(self):
@@ -366,8 +373,8 @@ class TestInference(unittest.TestCase):
 
     def test_filter_records_for_inference_without_line_augmentation_keeps_all_records(self):
         records = [
-            {"project_name": "p", "filename": "f", "line_id": "1"},
-            {"project_name": "p", "filename": "f", "line_id": "2"},
+            {"project_name": "p", "filename": "f", "region_id": "r", "line_id": "1"},
+            {"project_name": "p", "filename": "f", "region_id": "r", "line_id": "2"},
         ]
 
         filtered = self.inference._filter_records_for_inference(records)
@@ -380,24 +387,28 @@ class TestInference(unittest.TestCase):
                 "project_name": "p",
                 "filename": "f",
                 "line_id": "1",
+                "region_id": "r",
                 "line_augmentation": "original",
             },
             {
                 "project_name": "p",
                 "filename": "f",
                 "line_id": "1",
+                "region_id": "r",
                 "line_augmentation": "rotation",
             },
             {
                 "project_name": "p",
                 "filename": "f",
                 "line_id": "2",
+                "region_id": "r",
                 "line_augmentation": " ORIGINAL ",
             },
             {
                 "project_name": "p",
                 "filename": "f",
                 "line_id": "3",
+                "region_id": "r",
                 "line_augmentation": None,
             },
         ]
@@ -418,14 +429,15 @@ class TestInference(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p", "p"],
             "filename": ["f", "f", "f"],
+            "region_id": ["r", "r", "r"],
             "line_id": ["1", "1", "2"],
             "line_augmentation": ["original", "rotation", "original"],
             "text": ["", "", ""],
         })
 
         inferred_lines = {
-            ("p", "f", "1"): ["prediction for line 1"],
-            ("p", "f", "2"): ["prediction for line 2"],
+            ("p", "f", "r", "1"): ["prediction for line 1"],
+            ("p", "f", "r", "2"): ["prediction for line 2"],
         }
 
         updated = self.inference.write_inference_to_dataframe(
@@ -479,12 +491,13 @@ class TestInference(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p", "p"],
             "filename": ["f", "f"],
+            "region_id": ["r", "r"],
             "line_id": ["1", "1"],
             "text": ["", ""],
         })
 
         inferred_lines = {
-            ("p", "f", "1"): ["prediction A", "prediction B"],
+            ("p", "f", "r", "1"): ["prediction A", "prediction B"],
         }
 
         updated = self.inference.write_inference_to_dataframe(
@@ -506,12 +519,13 @@ class TestInference(unittest.TestCase):
             "project_name": ["p", "p", "p"],
             "filename": ["f", "f", "f"],
             "line_id": ["1", "1", "1"],
+            "region_id": ["r", "r", "r"],
             "line_augmentation": ["original", "original", '{"rotation": 1}'],
             "text": ["", "", ""],
         })
 
         inferred_lines = {
-            ("p", "f", "1"): ["prediction A", "prediction B"],
+            ("p", "f", "r", "1"): ["prediction A", "prediction B"],
         }
 
         updated = self.inference.write_inference_to_dataframe(
@@ -537,9 +551,9 @@ class TestInference(unittest.TestCase):
 
     def test_filter_records_for_inference_without_augmentation_keeps_duplicate_records(self):
         records = [
-            {"project_name": "p", "filename": "f", "line_id": "1"},
-            {"project_name": "p", "filename": "f", "line_id": "1"},
-            {"project_name": "p", "filename": "f", "line_id": "2"},
+            {"project_name": "p", "filename": "f", "region_id": "r","line_id": "1"},
+            {"project_name": "p", "filename": "f", "region_id": "r","line_id": "1"},
+            {"project_name": "p", "filename": "f", "region_id": "r","line_id": "2"},
         ]
 
         filtered = self.inference._filter_records_for_inference(records)
@@ -552,18 +566,21 @@ class TestInference(unittest.TestCase):
             {
                 "project_name": "p",
                 "filename": "f",
+                "region_id": "r",
                 "line_id": "1",
                 "line_augmentation": "original",
             },
             {
                 "project_name": "p",
                 "filename": "f",
+                "region_id": "r",
                 "line_id": "1",
                 "line_augmentation": "original",
             },
             {
                 "project_name": "p",
                 "filename": "f",
+                "region_id": "r",
                 "line_id": "1",
                 "line_augmentation": '{"rotation": 1}',
             },
@@ -579,8 +596,8 @@ class TestInference(unittest.TestCase):
             )
         )
         self.assertEqual(
-            [(record["project_name"], record["filename"], record["line_id"]) for record in filtered],
-            [("p", "f", "1"), ("p", "f", "1")],
+            [(record["project_name"], record["filename"], record["region_id"], record["line_id"]) for record in filtered],
+            [("p", "f", "r", "1"), ("p", "f", "r", "1")],
         )
 
     @patch("flow_inference.inference.HuggingFaceDataHandler")
@@ -605,6 +622,7 @@ class TestInference(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p"],
             "filename": ["f"],
+            "region_id": ["r"],
             "line_id": ["1"],
             "text": [""],
         })
@@ -615,6 +633,7 @@ class TestInference(unittest.TestCase):
                 {
                     "project_name": "p",
                     "filename": "f",
+                    "region_id": "r",
                     "line_id": "1",
                     "text": "",
                 }
@@ -639,7 +658,7 @@ class TestInference(unittest.TestCase):
         with patch.object(
                 inference,
                 "run_inference",
-                return_value={("p", "f", "1"): ["pred"]},
+                return_value={("p", "f", "r", "1"): ["pred"]},
         ):
             with self.assertRaisesRegex(
                     RuntimeError,
