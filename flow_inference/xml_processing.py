@@ -55,39 +55,48 @@ class XMLProcessor:
         u.text = text
         return te
 
-    def insert_inferred_lines(self, root, inferred_lines: Dict[str, str]) -> int:
+    def insert_inferred_lines(self, root, inferred_lines: Dict[tuple[str, str], str]) -> int:
         """
-        inferred_lines = { line_id: text }
+        inferred_lines = { (region_id, line_id): text }
 
         Returns the number of TextLine elements actually updated.
         """
         updated_count = 0
-        seen_ids: set[str] = set()
+        seen_keys: set[tuple[str, str]] = set()
 
-        for tl in root.findall(f".//{self.xmlns}TextLine"):
-            tl_id = tl.get("id")
+        for region in root.findall(f".//{self.xmlns}TextRegion"):
+            region_id = region.get("id")
 
-            if not tl_id:
+            if not region_id:
                 continue
 
-            if tl_id in seen_ids:
-                logger.warning(f"Duplicate TextLine id in XML: {tl_id}. Skipping duplicate.")
-                continue
+            for tl in region.findall(f".//{self.xmlns}TextLine"):
+                line_id = tl.get("id")
 
-            seen_ids.add(tl_id)
+                if not line_id:
+                    continue
 
-            if tl_id not in inferred_lines:
-                continue
+                key = (str(region_id), str(line_id))
 
-            text = inferred_lines[tl_id]
+                if key in seen_keys:
+                    logger.warning(
+                        f"Duplicate TextLine key in XML: region_id={region_id}, line_id={line_id}. "
+                        "Skipping duplicate."
+                    )
+                    continue
 
-            # delete existing TextEquiv
-            for old_te in tl.findall(f"{self.xmlns}TextEquiv"):
-                tl.remove(old_te)
+                seen_keys.add(key)
 
-            # insert new one
-            tl.append(self.create_text_equiv_element(text))
-            updated_count += 1
+                if key not in inferred_lines:
+                    continue
+
+                text = inferred_lines[key]
+
+                for old_te in tl.findall(f"{self.xmlns}TextEquiv"):
+                    tl.remove(old_te)
+
+                tl.append(self.create_text_equiv_element(text))
+                updated_count += 1
 
         return updated_count
 

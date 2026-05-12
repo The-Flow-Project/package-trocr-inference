@@ -45,8 +45,8 @@ class TestXMLProcessor(unittest.TestCase):
         xp = XMLProcessor.from_string(SAMPLE_XML)
 
         inferred = {
-            "L1": "Line 1 text",
-            "L3": "Line 3 text"
+            ("r1", "L1"): "Line 1 text",
+            ("r1", "L3"): "Line 3 text",
         }
 
         updated_count = xp.insert_inferred_lines(xp.root, inferred)
@@ -104,7 +104,10 @@ class TestXMLProcessor(unittest.TestCase):
 
         xp = XMLProcessor.from_string(xml_with_duplicate_id)
 
-        updated_count = xp.insert_inferred_lines(xp.root, {"L1": "Line 1 text"})
+        updated_count = xp.insert_inferred_lines(
+            xp.root,
+            {("r1", "L1"): "Line 1 text"},
+        )
         self.assertEqual(updated_count, 1)
 
         ns = {"ns": xp.namespace_uri}
@@ -122,7 +125,10 @@ class TestXMLProcessor(unittest.TestCase):
     def test_insert_inferred_lines_returns_zero_when_no_ids_match(self):
         xp = XMLProcessor.from_string(SAMPLE_XML)
 
-        updated_count = xp.insert_inferred_lines(xp.root, {"DOES_NOT_EXIST": "Text"})
+        updated_count = xp.insert_inferred_lines(
+            xp.root,
+            {("r1", "DOES_NOT_EXIST"): "Text"},
+        )
         self.assertEqual(updated_count, 0)
 
         ns = {"ns": xp.namespace_uri}
@@ -130,6 +136,51 @@ class TestXMLProcessor(unittest.TestCase):
 
         text_equivs = root.findall(".//ns:TextEquiv", namespaces=ns)
         self.assertEqual(len(text_equivs), 0)
+
+    def test_insert_inferred_lines_uses_region_id_to_disambiguate_same_line_id(self):
+        xml_with_same_line_id_in_different_regions = """
+        <PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2019-07-15">
+            <Page imageFilename="sample.png">
+                <TextRegion id="r1">
+                    <TextLine id="L1">
+                        <Coords points="0,0 10,0 10,10 0,10"/>
+                    </TextLine>
+                </TextRegion>
+                <TextRegion id="r2">
+                    <TextLine id="L1">
+                        <Coords points="0,20 10,20 10,30 0,30"/>
+                    </TextLine>
+                </TextRegion>
+            </Page>
+        </PcGts>
+        """
+
+        xp = XMLProcessor.from_string(xml_with_same_line_id_in_different_regions)
+
+        updated_count = xp.insert_inferred_lines(
+            xp.root,
+            {("r2", "L1"): "Only region 2 should be updated"},
+        )
+
+        self.assertEqual(updated_count, 1)
+
+        ns = {"ns": xp.namespace_uri}
+        root = ET.fromstring(xp.tree_to_string())
+
+        r1_l1 = root.find(".//ns:TextRegion[@id='r1']/ns:TextLine[@id='L1']", namespaces=ns)
+        r2_l1 = root.find(".//ns:TextRegion[@id='r2']/ns:TextLine[@id='L1']", namespaces=ns)
+
+        self.assertIsNotNone(r1_l1)
+        self.assertIsNotNone(r2_l1)
+
+        self.assertIsNone(r1_l1.find(".//ns:TextEquiv", namespaces=ns))
+
+        r2_te = r2_l1.find(".//ns:TextEquiv", namespaces=ns)
+        self.assertIsNotNone(r2_te)
+        self.assertEqual(
+            r2_te.find(".//ns:Unicode", namespaces=ns).text,
+            "Only region 2 should be updated",
+        )
 
 
 if __name__ == "__main__":

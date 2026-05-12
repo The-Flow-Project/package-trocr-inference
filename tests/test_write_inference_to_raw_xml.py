@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
+
 from datasets import load_dataset
 import pandas as pd
 from dotenv import load_dotenv
@@ -13,7 +15,9 @@ from flow_inference.write_inference_to_raw_xml import InferenceToRawXMLWriter
 
 
 SAMPLE_XML = """<PcGts>
-    <TextLine id="l1"/>
+    <TextRegion id="r1">
+        <TextLine id="l1"/>
+    </TextRegion>
 </PcGts>"""
 
 
@@ -42,6 +46,14 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         self._tmp_dirs.append(path)
         return path
 
+    def _unique_upload_repo_name(self, suffix: str) -> str:
+        if not self.upload_repo:
+            self.skipTest("Missing UPLOAD_RAW_XML_REPO.")
+
+        namespace = self.upload_repo.rsplit("/", 1)[0]
+        safe_suffix = suffix.replace("_", "-")
+        return f"{namespace}/test-rawxml-{safe_suffix}-{uuid4().hex[:8]}"
+
     # --------------------------------------------------
     # UNIT TEST: BUILD LOOKUP FROM INFERENCE DF
     # --------------------------------------------------
@@ -49,6 +61,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p1", "p1"],
             "filename": ["a.xml", "a.xml"],
+            "region_id": ["r1", "r1"],
             "line_id": ["l1", "l2"],
             "inference_test": ["A", "B"],
         })
@@ -57,13 +70,14 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         self.assertEqual(
             lookup,
-            {"p1": {"a.xml": {"l1": "A", "l2": "B"}}},
+            {"p1": {"a.xml": {("r1", "l1"): "A", ("r1", "l2"): "B"}}}
         )
 
     def test_build_lookup_skips_augmented_rows(self):
         df = pd.DataFrame({
             "project_name": ["p1", "p1", "p1"],
             "filename": ["a.xml", "a.xml", "a.xml"],
+            "region_id": ["r1", "r1", "r1"],
             "line_id": ["l1", "l1", "l2"],
             "line_augmentation": ["original", '{"erosion": 3}', "original"],
             "inference_test": ["ORIGINAL_L1", "AUGMENTED_L1", "ORIGINAL_L2"],
@@ -73,13 +87,14 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         self.assertEqual(
             lookup,
-            {"p1": {"a.xml": {"l1": "ORIGINAL_L1", "l2": "ORIGINAL_L2"}}},
+            {"p1": {"a.xml": {("r1", "l1"): "ORIGINAL_L1", ("r1", "l2"): "ORIGINAL_L2"}}}
         )
 
     def test_build_lookup_skips_ambiguous_duplicate_inference_keys(self):
         df = pd.DataFrame({
             "project_name": ["p1", "p1"],
             "filename": ["a.xml", "a.xml"],
+            "region_id": ["r1", "r1"],
             "line_id": ["l1", "l1"],
             "line_augmentation": ["original", "original"],
             "inference_test": ["FIRST", "SECOND"],
@@ -93,6 +108,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         df = pd.DataFrame({
             "project_name": ["p1", "p1"],
             "filename": ["a.xml", "a.xml"],
+            "region_id": ["r1", "r1"],
             "line_id": ["l1", "l1"],
             "line_augmentation": ["original", "original"],
             "inference_test": ["SAME", "SAME"],
@@ -102,7 +118,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         self.assertEqual(
             lookup,
-            {"p1": {"a.xml": {"l1": "SAME"}}},
+            {"p1": {"a.xml": {("r1", "l1"): "SAME"}}}
         )
 
     # --------------------------------------------------
@@ -115,7 +131,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
             "xml_content": [SAMPLE_XML],
         })
 
-        lookup = {"p1": {"a.xml": {"l1": "HELLO"}}}
+        lookup = {"p1": {"a.xml": {("r1", "l1"): "HELLO"}}}
         new_col = "inference_xml_20260418_214612_123456_from_test_repo"
 
         updated, cols = self.writer._update_df(df, lookup, new_col)
@@ -134,7 +150,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
             "xml_content": [SAMPLE_XML],
         })
 
-        lookup = {"p1": {"a.xml": {"does_not_exist": "HELLO"}}}
+        lookup = {"p1": {"a.xml": {("r1", "does_not_exist"): "HELLO"}}}
         new_col = "inference_xml_20260418_214612_123456_from_test_repo"
 
         updated, cols = self.writer._update_df(df, lookup, new_col)
@@ -183,6 +199,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         pd.DataFrame({
             "project_name": ["p1"],
             "filename": ["a.xml"],
+            "region_id": ["r1"],
             "line_id": ["l1"],
             "line_augmentation": ["original"],
             "inference_test": ["HELLO"],
@@ -244,11 +261,13 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         if not self.raw_repo or not self.inference_repo or not self.token or not self.upload_repo:
             self.skipTest("Missing HF integration configuration")
 
-        self.writer.process_and_upload(output_repo=self.upload_repo)
+        target_repo = self._unique_upload_repo_name("writeback")
+
+        self.writer.process_and_upload(output_repo=target_repo)
 
         api = HfApi()
         files = api.list_repo_files(
-            self.upload_repo,
+            target_repo,
             repo_type="dataset",
             token=self.token,
         )
@@ -259,7 +278,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         tmp_dir = tempfile.mkdtemp(prefix="verify_raw_xml_")
         try:
             downloaded = api.snapshot_download(
-                repo_id=self.upload_repo,
+                repo_id=target_repo,
                 repo_type="dataset",
                 token=self.token,
                 local_dir=tmp_dir,

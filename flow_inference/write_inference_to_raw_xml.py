@@ -1,4 +1,6 @@
 from pathlib import Path
+from typing import cast, Any
+
 import pandas as pd
 from huggingface_hub import HfApi, snapshot_download, CommitOperationAdd
 from datasets import load_dataset, DatasetDict
@@ -187,12 +189,24 @@ class InferenceToRawXMLWriter:
     def _build_lookup(cls, df: pd.DataFrame) -> dict:
         inference_col = cls._get_latest_inference_column(df)
 
-        required_cols = ["project_name", "filename", "line_id", inference_col]
+        required_cols = ["filename", "region_id", "line_id", inference_col]
         missing = [c for c in required_cols if c not in df.columns]
         if missing:
             raise RuntimeError(f"Missing required columns for XML writeback: {missing}")
 
         work_df = df.copy()
+
+        has_project_name = (
+                "project_name" in work_df.columns
+                and work_df["project_name"].fillna("").astype(str).str.strip().ne("").any()
+        )
+
+        if not has_project_name:
+            work_df["project_name"] = ""
+            logger.warning(
+                "No usable project_name column found for XML writeback lookup. "
+                "Using filename + region_id + line_id only."
+            )
 
         if LINE_AUGMENTATION_COLUMN in work_df.columns:
             work_df = work_df[
@@ -201,12 +215,17 @@ class InferenceToRawXMLWriter:
                 )
             ]
 
-        lookup: dict[str, dict[str, dict[str, str]]] = {}
+        lookup: dict[str, dict[str, dict[tuple[str, str], str]]] = {}
 
-        key_cols = ["project_name", "filename", "line_id"]
+        key_cols = ["project_name", "filename", "region_id", "line_id"]
 
-        for key_values, group in work_df.groupby(key_cols, dropna=False):
-            project_name, filename, line_id = [str(v) for v in key_values]
+        for raw_key_values, group in work_df.groupby(key_cols, dropna=False):
+            key_values = cast(tuple[Any, Any, Any, Any], raw_key_values)
+
+            project_name, filename, region_id, line_id = [
+                "" if pd.isna(v) else str(v).strip()
+                for v in key_values
+            ]
 
             texts = (
                 group[inference_col]
@@ -223,12 +242,15 @@ class InferenceToRawXMLWriter:
             if len(unique_texts) > 1:
                 logger.warning(
                     f"Ambiguous inference texts for "
-                    f"{project_name}/{filename}/{line_id}: {unique_texts}. "
+                    f"project='{project_name}', filename='{filename}', "
+                    f"region_id='{region_id}', line_id='{line_id}': {unique_texts}. "
                     f"Skipping XML writeback for this line."
                 )
                 continue
 
-            lookup.setdefault(project_name, {}).setdefault(filename, {})[line_id] = unique_texts[0]
+            lookup.setdefault(project_name, {}).setdefault(filename, {})[
+                (region_id, line_id)
+            ] = unique_texts[0]
 
         return lookup
 
@@ -239,15 +261,26 @@ class InferenceToRawXMLWriter:
         updated = False
 
         for i, r in df.iterrows():
-            proj = str(r["project_name"])
-            fn = str(r["filename"])
+            project_name = ""
+            if "project_name" in df.columns and pd.notna(r.get("project_name")):
+                project_name = str(r.get("project_name", "")).strip()
 
-            if proj not in lookup or fn not in lookup[proj]:
+            filename = str(r["filename"]).strip()
+
+            filename_lookup = None
+
+            if project_name and project_name in lookup and filename in lookup[project_name]:
+                filename_lookup = lookup[project_name][filename]
+
+            elif "" in lookup and filename in lookup[""]:
+                filename_lookup = lookup[""][filename]
+
+            if filename_lookup is None:
                 continue
 
             xp = XMLProcessor.from_string(r["xml_content"])
 
-            changed_count = xp.insert_inferred_lines(xp.root, lookup[proj][fn])
+            changed_count = xp.insert_inferred_lines(xp.root, filename_lookup)
 
             if changed_count == 0:
                 continue
