@@ -1,15 +1,24 @@
+import tempfile
 from pathlib import Path
-from typing import cast, Any
-
+from typing import cast, Any, Literal
+import shutil
 import pandas as pd
-from huggingface_hub import HfApi, snapshot_download, CommitOperationAdd
+from huggingface_hub import (
+    HfApi,
+    snapshot_download,
+    CommitOperationAdd,
+    CommitOperationDelete,
+)
+from huggingface_hub.utils import HfHubHTTPError
 from datasets import load_dataset, DatasetDict
-from flow_inference.xml_processing import XMLProcessor
+
 from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 from flow_inference.utils.logging.inference_logger import logger
+from flow_inference.xml_processing import XMLProcessor
 
 LINE_AUGMENTATION_COLUMN = "line_augmentation"
 ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
+UploadMode = Literal["new_repo", "replace", "update"]
 
 
 class InferenceToRawXMLWriter:
@@ -24,140 +33,464 @@ class InferenceToRawXMLWriter:
         self.allow_source_repo_update = allow_source_repo_update
 
     # ------------------------------------------------------------
+    # REPO / DOWNLOAD HELPERS
+    # ------------------------------------------------------------
+    @staticmethod
+    def _repo_exists(api: HfApi, repo_id: str, token: str | None) -> bool:
+        try:
+            api.dataset_info(
+                repo_id=repo_id,
+                token=token,
+            )
+            return True
+        except HfHubHTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                return False
+            raise
+
+    def _fresh_snapshot_download(
+        self,
+        repo_id: str,
+        revision: str,
+        prefix: str,
+    ) -> Path:
+        local_dir = tempfile.mkdtemp(prefix=prefix)
+
+        snapshot_download(
+            repo_id=repo_id,
+            repo_type="dataset",
+            revision=revision,
+            token=self.token,
+            local_dir=local_dir,
+            force_download=True,
+            allow_patterns=["data/**/*.parquet"],
+        )
+
+        return Path(local_dir)
+
+    @staticmethod
+    def _load_parquet_dataset_fresh(data_files):
+        return load_dataset(
+            "parquet",
+            data_files=data_files,
+            cache_dir=tempfile.mkdtemp(prefix="hf_parquet_cache_"),
+            download_mode="force_redownload",
+        )
+
+    @classmethod
+    def _parquet_paths_by_split(cls, root: Path, parquet_paths: list[Path]) -> dict[str, list[str]]:
+        result: dict[str, list[str]] = {}
+
+        for parquet_path in parquet_paths:
+            repo_path = str(parquet_path.relative_to(root)).replace("\\", "/")
+            split_name = cls._split_name_for_repo_path(repo_path)
+            result.setdefault(split_name, []).append(str(parquet_path))
+
+        return result
+
+    @staticmethod
+    def _split_name_for_repo_path(repo_path: str) -> str:
+        parts = Path(repo_path).parts
+
+        if len(parts) >= 3 and parts[0] == "data" and parts[1] in {"train", "test"}:
+            return parts[1]
+
+        return "default"
+
+    @staticmethod
+    def _inference_xml_columns(df: pd.DataFrame) -> list[str]:
+        return [
+            col
+            for col in df.columns
+            if str(col).startswith("inference_xml_")
+        ]
+
+    @staticmethod
+    def _build_replace_delete_operations(
+        target_files: list[str],
+        paths_that_will_be_added: set[str],
+    ) -> list[CommitOperationDelete]:
+        operations: list[CommitOperationDelete] = []
+
+        for path in target_files:
+            should_delete = path == "README.md" or path.startswith("data/")
+            will_be_readded = path in paths_that_will_be_added
+
+            if should_delete and not will_be_readded:
+                operations.append(CommitOperationDelete(path_in_repo=path))
+
+        return operations
+
+    @staticmethod
+    def _base_columns_for_raw_xml_update(df: pd.DataFrame) -> list[str]:
+        return [
+            col
+            for col in df.columns
+            if not str(col).startswith("inference_xml_")
+        ]
+
+    @classmethod
+    def _validate_compatible_raw_xml_base_schema(
+            cls,
+            source_df: pd.DataFrame,
+            target_df: pd.DataFrame,
+            repo_path: str,
+    ) -> None:
+        source_base = set(cls._base_columns_for_raw_xml_update(source_df))
+        target_base = set(cls._base_columns_for_raw_xml_update(target_df))
+
+        if source_base != target_base:
+            missing_in_target = sorted(source_base - target_base)
+            extra_in_target = sorted(target_base - source_base)
+
+            raise RuntimeError(
+                "Refusing update: target raw XML base schema is incompatible with "
+                f"the source raw XML file '{repo_path}'.\n"
+                f"Missing in target: {missing_in_target}\n"
+                f"Extra in target: {extra_in_target}\n"
+                "Only extra inference_xml_* columns are allowed in update mode. "
+                "Use upload_mode='replace' if this source/target mismatch is intentional."
+            )
+
+    def _merge_existing_target_inference_xml_columns(
+            self,
+            target_root: Path,
+            raw_root: Path,
+            raw_parquet_paths: list[Path],
+    ) -> None:
+        """
+        For upload_mode='update':
+
+        Start from the fresh raw XML source files, then copy existing target
+        inference_xml_* columns into them.
+
+        This allows the source repo to lack previous writeback columns while the
+        target repo preserves them.
+        """
+        for raw_parquet_path in raw_parquet_paths:
+            rel_path = raw_parquet_path.relative_to(raw_root)
+            repo_path = str(rel_path).replace("\\", "/")
+            target_parquet_path = target_root / rel_path
+
+            if not target_parquet_path.exists():
+                raise RuntimeError(
+                    "Refusing update: target repo parquet layout does not match "
+                    f"the current raw XML source. Missing target file: '{repo_path}'. "
+                    "Use upload_mode='replace' if this structure change is intentional."
+                )
+
+            source_df = pd.read_parquet(raw_parquet_path)
+            target_df = pd.read_parquet(target_parquet_path)
+
+            self._validate_compatible_raw_xml_base_schema(
+                source_df=source_df,
+                target_df=target_df,
+                repo_path=repo_path,
+            )
+
+            if len(source_df) != len(target_df):
+                raise RuntimeError(
+                    "Refusing update: target parquet row count differs from current "
+                    f"raw XML source for '{repo_path}'. "
+                    f"Source rows: {len(source_df)}, target rows: {len(target_df)}. "
+                    "Use upload_mode='replace' if this structure change is intentional."
+                )
+
+            target_inference_xml_cols = self._inference_xml_columns(target_df)
+
+            for col in target_inference_xml_cols:
+                if col in source_df.columns:
+                    continue
+
+                source_df[col] = target_df[col].values
+
+            source_df.to_parquet(raw_parquet_path, index=False)
+
+    # ------------------------------------------------------------
     # Pipeline
     # ------------------------------------------------------------
-    def process_and_upload(self, output_repo: str | None = None):
+    def process_and_upload(
+            self,
+            output_repo: str | None = None,
+            upload_mode: UploadMode = "new_repo",
+            private: bool = True,
+    ) -> None:
         api = HfApi()
+        temp_roots: list[Path] = []
 
-        target_repo = output_repo or self.raw_xml_repo
+        try:
+            target_repo = output_repo or self.raw_xml_repo
 
-        if target_repo == self.raw_xml_repo and not self.allow_source_repo_update:
-            raise RuntimeError("Refusing to upload into the source raw XML repo")
+            if upload_mode not in {"new_repo", "replace", "update"}:
+                raise ValueError(
+                    "upload_mode must be one of: 'new_repo', 'replace', 'update'"
+                )
 
-        if target_repo == self.inference_repo:
-            raise RuntimeError("Refusing to upload into the inference source repo")
+            # --------------------------------------------------
+            # 0. Safety checks
+            # --------------------------------------------------
+            if target_repo == self.raw_xml_repo and not self.allow_source_repo_update:
+                raise RuntimeError(
+                    "Refusing to upload into the source raw XML repo. "
+                    "Pass allow_source_repo_update=True only if this is intentional."
+                )
 
-        # --------------------------------------------------
-        # 1. Load inference
-        # --------------------------------------------------
-        inf_info = api.dataset_info(self.inference_repo, token=self.token)
-        inf_root = snapshot_download(
-            self.inference_repo,
-            repo_type="dataset",
-            revision=inf_info.sha,
-            token=self.token,
-        )
+            if target_repo == self.inference_repo:
+                raise RuntimeError(
+                    "Refusing to upload into the inference source repo."
+                )
 
-        inf_parquets = list(Path(inf_root).rglob("*.parquet"))
-        inf_ds = load_dataset("parquet", data_files=[str(p) for p in inf_parquets])["train"]
-        lookup = self._build_lookup(inf_ds.to_pandas())
+            target_exists = self._repo_exists(
+                api=api,
+                repo_id=target_repo,
+                token=self.token,
+            )
 
-        # --------------------------------------------------
-        # 2. Snapshot raw XML repo
-        # --------------------------------------------------
-        raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
-        raw_root = snapshot_download(
-            self.raw_xml_repo,
-            repo_type="dataset",
-            revision=raw_info.sha,
-            token=self.token,
-        )
+            if upload_mode == "new_repo" and target_exists:
+                raise RuntimeError(
+                    f"Target dataset repo '{target_repo}' already exists. "
+                    "Use upload_mode='update' to preserve existing inference_xml columns, "
+                    "or upload_mode='replace' to replace target contents."
+                )
 
-        raw_root = Path(raw_root)
-        raw_parquets = list(raw_root.rglob("*.parquet"))
+            if upload_mode == "update" and not target_exists:
+                raise RuntimeError(
+                    f"Target dataset repo '{target_repo}' does not exist. "
+                    "Use upload_mode='new_repo' to create it."
+                )
 
-        ops: list[CommitOperationAdd] = []
+            # --------------------------------------------------
+            # 1. Fresh-load inference source repo
+            # --------------------------------------------------
+            inf_info = api.dataset_info(self.inference_repo, token=self.token)
+            inf_root = self._fresh_snapshot_download(
+                repo_id=self.inference_repo,
+                revision=inf_info.sha,
+                prefix="fresh_inference_repo_",
+            )
+            temp_roots.append(inf_root)
 
-        # --------------------------------------------------
-        # 3. Update parquet files in place
-        # --------------------------------------------------
-        updated_frames_by_split: dict[str, list[pd.DataFrame]] = {}
-        parquet_paths_by_split: dict[str, list[str]] = {}
-        new_xml_column = self._build_inference_xml_column_name()
+            inf_parquets = sorted(inf_root.rglob("*.parquet"))
 
-        for parquet_path in raw_parquets:
-            df = pd.read_parquet(parquet_path)
+            if not inf_parquets:
+                raise RuntimeError(
+                    f"No parquet files found in inference repo '{self.inference_repo}'."
+                )
 
-            df, _ = self._update_df(df, lookup, new_xml_column)
-            df.to_parquet(parquet_path, index=False)
+            inf_paths_by_split = self._parquet_paths_by_split(
+                root=inf_root,
+                parquet_paths=inf_parquets,
+            )
 
-            rel_path = parquet_path.relative_to(raw_root)
-            parts = rel_path.parts
+            inf_dataset = self._load_parquet_dataset_fresh(
+                data_files=inf_paths_by_split,
+            )
 
-            if len(parts) >= 3 and parts[0] == "data" and parts[1] in {"train", "test"}:
-                split_name = parts[1]
-            else:
-                split_name = "default"
+            if not isinstance(inf_dataset, DatasetDict):
+                inf_dataset = DatasetDict({"default": inf_dataset})
 
-            updated_frames_by_split.setdefault(split_name, []).append(df)
-            parquet_paths_by_split.setdefault(split_name, []).append(str(parquet_path))
+            inf_df = pd.concat(
+                [split_ds.to_pandas() for split_ds in inf_dataset.values()],
+                ignore_index=True,
+            )
 
-            ops.append(
+            lookup = self._build_lookup(inf_df)
+
+            if not lookup:
+                logger.warning(
+                    "Inference lookup is empty. No raw XML lines will be updated."
+                )
+
+            # --------------------------------------------------
+            # 2. Fresh-load raw XML source repo
+            # --------------------------------------------------
+            raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
+            raw_root = self._fresh_snapshot_download(
+                repo_id=self.raw_xml_repo,
+                revision=raw_info.sha,
+                prefix="fresh_raw_xml_repo_",
+            )
+            temp_roots.append(raw_root)
+
+            raw_parquets = sorted(raw_root.rglob("*.parquet"))
+
+            if not raw_parquets:
+                raise RuntimeError(
+                    f"No parquet files found in raw XML repo '{self.raw_xml_repo}'."
+                )
+
+            # --------------------------------------------------
+            # 3. Add new inference_xml column to raw XML parquet files
+            # --------------------------------------------------
+            new_xml_column = self._build_inference_xml_column_name()
+
+            parquet_repo_paths: list[str] = []
+
+            for parquet_path in raw_parquets:
+                df = pd.read_parquet(parquet_path)
+
+                df, _ = self._update_df(df, lookup, new_xml_column)
+                df.to_parquet(parquet_path, index=False)
+
+                rel_path = str(parquet_path.relative_to(raw_root)).replace("\\", "/")
+                parquet_repo_paths.append(rel_path)
+
+            # --------------------------------------------------
+            # 4. If update mode: fresh-download target and preserve old XML columns
+            # --------------------------------------------------
+            if upload_mode == "update":
+                target_info = api.dataset_info(target_repo, token=self.token)
+                target_root = self._fresh_snapshot_download(
+                    repo_id=target_repo,
+                    revision=target_info.sha,
+                    prefix="fresh_target_repo_",
+                )
+                temp_roots.append(target_root)
+
+                target_parquet_paths = {
+                    str(p.relative_to(target_root)).replace("\\", "/")
+                    for p in target_root.rglob("*.parquet")
+                }
+
+                current_parquet_paths = set(parquet_repo_paths)
+
+                extra_target_parquets = target_parquet_paths - current_parquet_paths
+                missing_target_parquets = current_parquet_paths - target_parquet_paths
+
+                if extra_target_parquets or missing_target_parquets:
+                    extra_formatted = "\n".join(sorted(extra_target_parquets)) or "(none)"
+                    missing_formatted = "\n".join(sorted(missing_target_parquets)) or "(none)"
+
+                    raise RuntimeError(
+                        "Refusing update: target repo parquet layout does not exactly "
+                        "match the current raw XML source. Use upload_mode='replace' "
+                        "if this dataset structure change is intentional.\n"
+                        f"Extra target parquet files:\n{extra_formatted}\n"
+                        f"Missing target parquet files:\n{missing_formatted}"
+                    )
+
+                self._merge_existing_target_inference_xml_columns(
+                    target_root=target_root,
+                    raw_root=raw_root,
+                    raw_parquet_paths=raw_parquets,
+                )
+
+            # --------------------------------------------------
+            # 5. Build final split DataFrames and parquet map after optional merge
+            # --------------------------------------------------
+            parquet_paths_by_split = self._parquet_paths_by_split(
+                root=raw_root,
+                parquet_paths=raw_parquets,
+            )
+
+            updated_frames_by_split: dict[str, list[pd.DataFrame]] = {}
+
+            for parquet_path in raw_parquets:
+                rel_path = str(parquet_path.relative_to(raw_root)).replace("\\", "/")
+                split_name = self._split_name_for_repo_path(rel_path)
+                df = pd.read_parquet(parquet_path)
+                updated_frames_by_split.setdefault(split_name, []).append(df)
+
+            combined_dfs = {
+                split_name: pd.concat(frames, ignore_index=True)
+                for split_name, frames in updated_frames_by_split.items()
+            }
+
+            raw_dataset = self._load_parquet_dataset_fresh(
+                data_files=parquet_paths_by_split,
+            )
+
+            if not isinstance(raw_dataset, DatasetDict):
+                raw_dataset = DatasetDict({"default": raw_dataset})
+
+            # --------------------------------------------------
+            # 6. Build commit operations
+            # --------------------------------------------------
+            operations: list[CommitOperationAdd | CommitOperationDelete] = []
+
+            paths_that_will_be_added = set(parquet_repo_paths)
+            paths_that_will_be_added.add("README.md")
+
+            if target_exists and upload_mode == "replace":
+                target_files = api.list_repo_files(
+                    repo_id=target_repo,
+                    repo_type="dataset",
+                    token=self.token,
+                )
+
+                operations.extend(
+                    self._build_replace_delete_operations(
+                        target_files=target_files,
+                        paths_that_will_be_added=paths_that_will_be_added,
+                    )
+                )
+
+            for parquet_path in raw_parquets:
+                rel_path = str(parquet_path.relative_to(raw_root)).replace("\\", "/")
+
+                operations.append(
+                    CommitOperationAdd(
+                        path_in_repo=rel_path,
+                        path_or_fileobj=str(parquet_path),
+                    )
+                )
+
+            # --------------------------------------------------
+            # 7. README handling
+            # --------------------------------------------------
+            builder = HuggingFaceReadmeBuilder(
+                repo_id=target_repo,
+                dataset=raw_dataset,
+                dataframes=combined_dfs,
+                parquet_paths=parquet_paths_by_split,
+                source_repos=[self.raw_xml_repo, self.inference_repo],
+                description_text=(
+                    f"This dataset is derived from "
+                    f"[{self.raw_xml_repo}](https://huggingface.co/datasets/{self.raw_xml_repo}) "
+                    f"and enriched with raw XML inference derived from "
+                    f"[{self.inference_repo}](https://huggingface.co/datasets/{self.inference_repo})."
+                ),
+                tags=["xml", "pagexml", "inference", "htr"],
+            )
+
+            operations.append(
                 CommitOperationAdd(
-                    path_in_repo=str(rel_path).replace("\\", "/"),
-                    path_or_fileobj=str(parquet_path),
+                    path_in_repo="README.md",
+                    path_or_fileobj=builder.render().encode("utf-8"),
                 )
             )
 
-        # --------------------------------------------------
-        # 4. README handling (generate fresh)
-        # --------------------------------------------------
-        combined_dfs = {
-            split_name: pd.concat(frames, ignore_index=True)
-            for split_name, frames in updated_frames_by_split.items()
-        }
+            # --------------------------------------------------
+            # 8. Create repo if needed
+            # --------------------------------------------------
+            if not target_exists:
+                api.create_repo(
+                    repo_id=target_repo,
+                    repo_type="dataset",
+                    private=private,
+                    exist_ok=False,
+                    token=self.token,
+                )
 
-        raw_dataset = load_dataset(
-            "parquet",
-            data_files=parquet_paths_by_split,
-        )
-
-        if not isinstance(raw_dataset, DatasetDict):
-            raw_dataset = DatasetDict({"default": raw_dataset})
-
-        builder = HuggingFaceReadmeBuilder(
-            repo_id=target_repo,
-            dataset=raw_dataset,
-            dataframes=combined_dfs,
-            parquet_paths=parquet_paths_by_split,
-            source_repos=[self.raw_xml_repo, self.inference_repo],
-            description_text=(
-                f"This dataset is derived from "
-                f"[{self.raw_xml_repo}](https://huggingface.co/datasets/{self.raw_xml_repo}) "
-                f"and enriched with raw XML inference derived from "
-                f"[{self.inference_repo}](https://huggingface.co/datasets/{self.inference_repo})."
-            ),
-            tags=["xml", "pagexml", "inference", "htr"],
-        )
-
-        ops.append(
-            CommitOperationAdd(
-                path_in_repo="README.md",
-                path_or_fileobj=builder.render().encode("utf-8"),
+            # --------------------------------------------------
+            # 9. Single commit
+            # --------------------------------------------------
+            api.create_commit(
+                repo_id=target_repo,
+                repo_type="dataset",
+                operations=operations,
+                commit_message="Write inference into raw XML.",
+                token=self.token,
             )
-        )
 
-        # --------------------------------------------------
-        # 5. Ensure repo exists
-        # --------------------------------------------------
-        api.create_repo(
-            repo_id=target_repo,
-            repo_type="dataset",
-            private=True,
-            exist_ok=True,
-            token=self.token,
-        )
+            logger.info(
+                f"Uploaded raw XML writeback dataset to HF Hub: {target_repo} "
+                f"(upload_mode={upload_mode})"
+            )
 
-        # --------------------------------------------------
-        # 6. Single commit
-        # --------------------------------------------------
-        api.create_commit(
-            repo_id=target_repo,
-            repo_type="dataset",
-            operations=ops,
-            commit_message="Write inference into raw XML.",
-            token=self.token,
-        )
+        finally:
+            for temp_root in temp_roots:
+                shutil.rmtree(temp_root, ignore_errors=True)
 
     # ------------------------------------------------------------
     # HELPERS
