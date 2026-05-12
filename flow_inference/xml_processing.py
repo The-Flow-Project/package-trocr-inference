@@ -1,10 +1,12 @@
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
+import io
 import xml.etree.ElementTree as et
 from typing import Dict
-import io
+
 from flow_inference.utils.logging.inference_logger import logger
+
 
 # ===============================================================================
 # CLASS
@@ -23,43 +25,89 @@ class XMLProcessor:
 
         self.root = self.tree.getroot()
 
-        # safe namespace extraction
+        # Safe namespace extraction
         if "}" in self.root.tag:
-            self.namespace_uri = self.root.tag.split('}')[0][1:]
+            self.namespace_uri = self.root.tag.split("}")[0][1:]
         else:
             self.namespace_uri = ""
 
-        self.namespace = {'p': self.namespace_uri}
+        self.namespace = {"p": self.namespace_uri}
         self.xmlns = f"{{{self.namespace_uri}}}" if self.namespace_uri else ""
 
     @staticmethod
     def from_string(xml_content: str) -> "XMLProcessor":
-        tree = et.ElementTree(et.fromstring(xml_content))
+        """
+        Create an XMLProcessor instance from an XML string.
+        """
+        try:
+            tree = et.ElementTree(et.fromstring(xml_content))
+        except et.ParseError as e:
+            raise ValueError(f"Error parsing XML content: {e}") from e
+
         instance = XMLProcessor.__new__(XMLProcessor)
         instance.tree = tree
         instance.root = tree.getroot()
 
-        # safe namespace extraction (same logic as __init__)
+        # Safe namespace extraction, same logic as __init__
         if "}" in instance.root.tag:
-            instance.namespace_uri = instance.root.tag.split('}')[0][1:]
+            instance.namespace_uri = instance.root.tag.split("}")[0][1:]
         else:
             instance.namespace_uri = ""
 
-        instance.namespace = {'p': instance.namespace_uri}
+        instance.namespace = {"p": instance.namespace_uri}
         instance.xmlns = f"{{{instance.namespace_uri}}}" if instance.namespace_uri else ""
+
         return instance
 
     def create_text_equiv_element(self, text: str):
-        te = et.Element(f"{self.xmlns}TextEquiv")
-        u = et.SubElement(te, f"{self.xmlns}Unicode")
-        u.text = text
-        return te
-
-    def insert_inferred_lines(self, root, inferred_lines: Dict[tuple[str, str], str]) -> int:
         """
-        inferred_lines = { (region_id, line_id): text }
+        Create a TextEquiv element with one Unicode child.
+        """
+        text_equiv = et.Element(f"{self.xmlns}TextEquiv")
+        unicode_el = et.SubElement(text_equiv, f"{self.xmlns}Unicode")
+        unicode_el.text = text
+        return text_equiv
 
-        Returns the number of TextLine elements actually updated.
+    def replace_direct_text_equiv(self, element, text: str) -> None:
+        """
+        Replace only direct TextEquiv children of the given element.
+
+        This is used for both TextLine and TextRegion. It intentionally does not
+        touch nested TextEquiv elements.
+        """
+        for old_text_equiv in element.findall(f"{self.xmlns}TextEquiv"):
+            element.remove(old_text_equiv)
+
+        element.append(self.create_text_equiv_element(text))
+
+    def insert_inferred_lines(
+        self,
+        root,
+        inferred_lines: Dict[tuple[str, str], str],
+    ) -> int:
+        """
+        Insert inferred text into PAGE XML.
+
+        Expected input:
+
+            inferred_lines = {
+                (region_id, line_id): text
+            }
+
+        Behavior:
+        - Updates matching TextLine elements with a direct TextEquiv.
+        - Writes one direct TextEquiv at the end of each updated TextRegion.
+        - The TextRegion TextEquiv contains the collected text of all updated
+          TextLine elements in that region, joined with newlines.
+        - Existing direct TextEquiv elements on updated TextLine/TextRegion
+          elements are replaced.
+        - Nested TextEquiv elements are not touched.
+        - Duplicate (region_id, line_id) pairs in the XML are skipped after the
+          first occurrence.
+        - Empty predictions are skipped so existing XML text is not erased.
+
+        Returns:
+            Number of TextLine elements updated.
         """
         updated_count = 0
         seen_keys: set[tuple[str, str]] = set()
@@ -70,8 +118,10 @@ class XMLProcessor:
             if not region_id:
                 continue
 
-            for tl in region.findall(f".//{self.xmlns}TextLine"):
-                line_id = tl.get("id")
+            region_texts: list[str] = []
+
+            for text_line in region.findall(f"{self.xmlns}TextLine"):
+                line_id = text_line.get("id")
 
                 if not line_id:
                     continue
@@ -80,7 +130,8 @@ class XMLProcessor:
 
                 if key in seen_keys:
                     logger.warning(
-                        f"Duplicate TextLine key in XML: region_id={region_id}, line_id={line_id}. "
+                        f"Duplicate TextLine key in XML: "
+                        f"region_id={region_id}, line_id={line_id}. "
                         "Skipping duplicate."
                     )
                     continue
@@ -90,29 +141,27 @@ class XMLProcessor:
                 if key not in inferred_lines:
                     continue
 
-                text = inferred_lines[key]
+                text = str(inferred_lines[key]).strip()
 
-                for old_te in tl.findall(f"{self.xmlns}TextEquiv"):
-                    tl.remove(old_te)
+                if not text:
+                    continue
 
-                tl.append(self.create_text_equiv_element(text))
+                self.replace_direct_text_equiv(text_line, text)
                 updated_count += 1
+                region_texts.append(text)
+
+            region_text = "\n".join(region_texts)
+            self.replace_direct_text_equiv(region, region_text)
 
         return updated_count
 
-    def extract_all_text_lines(self):
-        lines = []
-        for tl in self.root.findall(f".//{self.xmlns}TextLine"):
-            te = tl.find(f"{self.xmlns}TextEquiv")
-            if te is not None:
-                u = te.find(f"{self.xmlns}Unicode")
-                if u is not None and u.text:
-                    lines.append(u.text.strip())
-        return lines
-
     def tree_to_string(self) -> str:
-        et.register_namespace("", self.namespace_uri)
+        """
+        Serialize the XML tree to a string.
+        """
+        if self.namespace_uri:
+            et.register_namespace("", self.namespace_uri)
+
         buf = io.StringIO()
         self.tree.write(buf, encoding="unicode", xml_declaration=True)
         return buf.getvalue()
-
