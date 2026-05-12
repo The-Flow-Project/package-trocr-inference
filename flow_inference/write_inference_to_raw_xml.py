@@ -495,10 +495,10 @@ class InferenceToRawXMLWriter:
     # ------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------
-    def _build_inference_xml_column_name(self) -> str:
-        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S_%f")
-        repo_name = self.inference_repo.split("/")[-1].replace("-", "_").replace("/", "_")
-        return f"inference_xml_{timestamp}_from_{repo_name}"
+    @staticmethod
+    def _build_inference_xml_column_name() -> str:
+        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+        return f"inference_xml_{timestamp}"
 
     @staticmethod
     def _is_original_line_augmentation_value(value) -> bool:

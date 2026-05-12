@@ -234,9 +234,8 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
     def test_build_inference_xml_column_name(self):
         col = self.writer._build_inference_xml_column_name()
 
-        self.assertTrue(col.startswith("inference_xml_"))
-        self.assertIn("_from_", col)
-        self.assertIn(self.inference_repo.split("/")[-1].replace("-", "_").replace("/", "_"), col)
+        self.assertRegex(col, r"^inference_xml_\d{8}_\d{6}$")
+        self.assertNotIn("_from_", col)
 
     # --------------------------------------------------
     # UNIT TEST: PROCESS AND UPLOAD
