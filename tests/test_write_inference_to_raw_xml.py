@@ -203,16 +203,16 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         lookup = {"p1": {"a.xml": {("r1", "l1"): "HELLO"}}}
         new_col = "inference_xml_20260418_214612_123456_from_test_repo"
 
-        updated, cols = self.writer._update_df(df, lookup, new_col)
+        updated, updated_count = self.writer._update_df(df, lookup, new_col)
 
-        self.assertEqual(cols, [new_col])
+        self.assertEqual(updated_count, 1)
 
         xml = updated.iloc[0][new_col]
         self.assertIn("HELLO", xml)
         self.assertIn("TextEquiv", xml)
         self.assertIn("Unicode", xml)
 
-    def test_update_df_returns_no_updated_columns_when_no_line_matches(self):
+    def test_update_df_returns_zero_when_no_line_matches(self):
         df = pd.DataFrame({
             "project_name": ["p1"],
             "filename": ["a.xml"],
@@ -222,9 +222,9 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         lookup = {"p1": {"a.xml": {("r1", "does_not_exist"): "HELLO"}}}
         new_col = "inference_xml_20260418_214612_123456_from_test_repo"
 
-        updated, cols = self.writer._update_df(df, lookup, new_col)
+        updated, updated_count = self.writer._update_df(df, lookup, new_col)
 
-        self.assertEqual(cols, [])
+        self.assertEqual(updated_count, 0)
         self.assertIn(new_col, updated.columns)
         self.assertEqual(updated.iloc[0][new_col], "")
 
@@ -271,10 +271,12 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         mock_snapshot.side_effect = fake_snapshot_download
 
-        self.writer.process_and_upload(
+        result = self.writer.process_and_upload(
             output_repo=self.upload_repo,
             upload_mode="new_repo",
         )
+
+        self.assertEqual(result, {"updated_records": 1})
 
         api.create_repo.assert_called_once_with(
             repo_id=self.upload_repo,
@@ -364,10 +366,12 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         mock_snapshot.side_effect = fake_snapshot_download
 
-        self.writer.process_and_upload(
+        result = self.writer.process_and_upload(
             output_repo=self.upload_repo,
             upload_mode="update",
         )
+
+        self.assertEqual(result, {"updated_records": 1})
 
         api.create_repo.assert_not_called()
         api.create_commit.assert_called_once()
@@ -419,10 +423,12 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         mock_snapshot.side_effect = fake_snapshot_download
 
-        self.writer.process_and_upload(
+        result = self.writer.process_and_upload(
             output_repo=self.upload_repo,
             upload_mode="replace",
         )
+
+        self.assertEqual(result, {"updated_records": 1})
 
         api.create_repo.assert_not_called()
         api.create_commit.assert_called_once()
@@ -542,10 +548,14 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         target_repo = self._unique_upload_repo_name("writeback")
 
-        self.writer.process_and_upload(
+        result = self.writer.process_and_upload(
             output_repo=target_repo,
             upload_mode="new_repo",
         )
+
+        self.assertIsInstance(result, dict)
+        self.assertIn("updated_records", result)
+        self.assertGreater(result["updated_records"], 0)
 
         api = HfApi()
         files = api.list_repo_files(
@@ -661,10 +671,12 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         mock_snapshot.side_effect = fake_snapshot_download
 
-        self.writer.process_and_upload(
+        result = self.writer.process_and_upload(
             output_repo=self.upload_repo,
             upload_mode="new_repo",
         )
+
+        self.assertEqual(result, {"updated_records": 2})
 
         api.create_repo.assert_called_once()
         api.create_commit.assert_called_once()

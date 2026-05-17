@@ -214,12 +214,24 @@ class InferenceToRawXMLWriter:
             output_repo: str | None = None,
             upload_mode: UploadMode = "new_repo",
             private: bool = True,
-    ) -> None:
+    ) -> dict:
+        logger.info("Starting raw XML writeback pipeline.")
+
         api = HfApi()
         temp_roots: list[Path] = []
 
         try:
             target_repo = output_repo or self.raw_xml_repo
+
+            logger.info(
+                f"Raw XML writeback configuration: "
+                f"raw_xml_repo='{self.raw_xml_repo}', "
+                f"inference_repo='{self.inference_repo}', "
+                f"target_repo='{target_repo}', "
+                f"upload_mode='{upload_mode}', "
+                f"private={private}, "
+                f"allow_source_repo_update={self.allow_source_repo_update}"
+            )
 
             if upload_mode not in {"new_repo", "replace", "update"}:
                 raise ValueError(
@@ -229,6 +241,8 @@ class InferenceToRawXMLWriter:
             # --------------------------------------------------
             # 0. Safety checks
             # --------------------------------------------------
+            logger.info("Running raw XML writeback safety checks.")
+
             if target_repo == self.raw_xml_repo and not self.allow_source_repo_update:
                 raise RuntimeError(
                     "Refusing to upload into the source raw XML repo. "
@@ -244,6 +258,11 @@ class InferenceToRawXMLWriter:
                 api=api,
                 repo_id=target_repo,
                 token=self.token,
+            )
+
+            logger.info(
+                f"Target repository check complete: "
+                f"target_repo='{target_repo}', exists={target_exists}"
             )
 
             if upload_mode == "new_repo" and target_exists:
@@ -262,7 +281,12 @@ class InferenceToRawXMLWriter:
             # --------------------------------------------------
             # 1. Fresh-load inference source repo
             # --------------------------------------------------
+            logger.info(f"Downloading inference source repo: {self.inference_repo}")
+
             inf_info = api.dataset_info(self.inference_repo, token=self.token)
+
+            logger.info(f"Resolved inference repo revision: {inf_info.sha}")
+
             inf_root = self._fresh_snapshot_download(
                 repo_id=self.inference_repo,
                 revision=inf_info.sha,
@@ -277,9 +301,18 @@ class InferenceToRawXMLWriter:
                     f"No parquet files found in inference repo '{self.inference_repo}'."
                 )
 
+            logger.info(
+                f"Downloaded inference repo successfully: "
+                f"{len(inf_parquets)} parquet file(s) found."
+            )
+
             inf_paths_by_split = self._parquet_paths_by_split(
                 root=inf_root,
                 parquet_paths=inf_parquets,
+            )
+
+            logger.info(
+                f"Loading inference parquet dataset with splits={list(inf_paths_by_split.keys())}."
             )
 
             inf_dataset = self._load_parquet_dataset_fresh(
@@ -294,7 +327,17 @@ class InferenceToRawXMLWriter:
                 ignore_index=True,
             )
 
+            logger.info(
+                f"Inference dataset loaded successfully: {len(inf_df)} row(s)."
+            )
+
+            logger.info("Building XML writeback lookup from latest inference_* column.")
+
             lookup = self._build_lookup(inf_df)
+
+            logger.info(
+                f"XML writeback lookup built: {len(lookup)} project group(s)."
+            )
 
             if not lookup:
                 logger.warning(
@@ -304,7 +347,12 @@ class InferenceToRawXMLWriter:
             # --------------------------------------------------
             # 2. Fresh-load raw XML source repo
             # --------------------------------------------------
+            logger.info(f"Downloading raw XML source repo: {self.raw_xml_repo}")
+
             raw_info = api.dataset_info(self.raw_xml_repo, token=self.token)
+
+            logger.info(f"Resolved raw XML repo revision: {raw_info.sha}")
+
             raw_root = self._fresh_snapshot_download(
                 repo_id=self.raw_xml_repo,
                 revision=raw_info.sha,
@@ -319,27 +367,61 @@ class InferenceToRawXMLWriter:
                     f"No parquet files found in raw XML repo '{self.raw_xml_repo}'."
                 )
 
+            logger.info(
+                f"Downloaded raw XML repo successfully: "
+                f"{len(raw_parquets)} parquet file(s) found."
+            )
+
             # --------------------------------------------------
             # 3. Add new inference_xml column to raw XML parquet files
             # --------------------------------------------------
             new_xml_column = self._build_inference_xml_column_name()
 
+            logger.info(
+                f"Writing inferred text into new raw XML column: {new_xml_column}"
+            )
+
             parquet_repo_paths: list[str] = []
+            updated_records = 0
 
             for parquet_path in raw_parquets:
+                rel_path = str(parquet_path.relative_to(raw_root)).replace("\\", "/")
+
+                logger.info(f"Updating raw XML parquet file: {rel_path}")
+
                 df = pd.read_parquet(parquet_path)
 
-                df, _ = self._update_df(df, lookup, new_xml_column)
+                df, updated_count = self._update_df(df, lookup, new_xml_column)
+                updated_records += updated_count
+
                 df.to_parquet(parquet_path, index=False)
 
-                rel_path = str(parquet_path.relative_to(raw_root)).replace("\\", "/")
+                logger.info(
+                    f"Finished raw XML parquet file: {rel_path} "
+                    f"({updated_count} record(s) updated out of {len(df)} row(s))."
+                )
+
                 parquet_repo_paths.append(rel_path)
+
+            logger.info(
+                f"Raw XML parquet update step completed: "
+                f"{updated_records} record(s) updated across "
+                f"{len(parquet_repo_paths)} parquet file(s)."
+            )
 
             # --------------------------------------------------
             # 4. If update mode: fresh-download target and preserve old XML columns
             # --------------------------------------------------
             if upload_mode == "update":
+                logger.info(
+                    f"Upload mode is 'update'. Downloading target repo to preserve "
+                    f"existing inference_xml_* columns: {target_repo}"
+                )
+
                 target_info = api.dataset_info(target_repo, token=self.token)
+
+                logger.info(f"Resolved target repo revision: {target_info.sha}")
+
                 target_root = self._fresh_snapshot_download(
                     repo_id=target_repo,
                     revision=target_info.sha,
@@ -375,9 +457,13 @@ class InferenceToRawXMLWriter:
                     raw_parquet_paths=raw_parquets,
                 )
 
+                logger.info("Existing target inference_xml_* columns preserved successfully.")
+
             # --------------------------------------------------
             # 5. Build final split DataFrames and parquet map after optional merge
             # --------------------------------------------------
+            logger.info("Building final split DataFrames and parquet path map.")
+
             parquet_paths_by_split = self._parquet_paths_by_split(
                 root=raw_root,
                 parquet_paths=raw_parquets,
@@ -403,15 +489,25 @@ class InferenceToRawXMLWriter:
             if not isinstance(raw_dataset, DatasetDict):
                 raw_dataset = DatasetDict({"default": raw_dataset})
 
+            logger.info(
+                f"Final raw XML dataset prepared with splits={list(combined_dfs.keys())}."
+            )
+
             # --------------------------------------------------
             # 6. Build commit operations
             # --------------------------------------------------
+            logger.info("Building Hugging Face commit operations.")
+
             operations: list[CommitOperationAdd | CommitOperationDelete] = []
 
             paths_that_will_be_added = set(parquet_repo_paths)
             paths_that_will_be_added.add("README.md")
 
             if target_exists and upload_mode == "replace":
+                logger.info(
+                    f"Upload mode is 'replace'. Listing existing target files in {target_repo}."
+                )
+
                 target_files = api.list_repo_files(
                     repo_id=target_repo,
                     repo_type="dataset",
@@ -435,9 +531,15 @@ class InferenceToRawXMLWriter:
                     )
                 )
 
+            logger.info(
+                f"Prepared {len(operations)} commit operation(s) before README handling."
+            )
+
             # --------------------------------------------------
             # 7. README handling
             # --------------------------------------------------
+            logger.info("Building dataset README.")
+
             builder = HuggingFaceReadmeBuilder(
                 repo_id=target_repo,
                 dataset=raw_dataset,
@@ -460,10 +562,19 @@ class InferenceToRawXMLWriter:
                 )
             )
 
+            logger.info(
+                f"Prepared {len(operations)} total commit operation(s), including README."
+            )
+
             # --------------------------------------------------
             # 8. Create repo if needed
             # --------------------------------------------------
             if not target_exists:
+                logger.info(
+                    f"Creating target dataset repository: {target_repo} "
+                    f"(private={private})"
+                )
+
                 api.create_repo(
                     repo_id=target_repo,
                     repo_type="dataset",
@@ -475,6 +586,8 @@ class InferenceToRawXMLWriter:
             # --------------------------------------------------
             # 9. Single commit
             # --------------------------------------------------
+            logger.info(f"Uploading raw XML writeback dataset to HF Hub: {target_repo}")
+
             api.create_commit(
                 repo_id=target_repo,
                 repo_type="dataset",
@@ -488,8 +601,18 @@ class InferenceToRawXMLWriter:
                 f"(upload_mode={upload_mode})"
             )
 
+            logger.info(
+                f"Raw XML writeback completed successfully: "
+                f"updated_records={updated_records}, target_repo='{target_repo}'"
+            )
+
+            return {
+                "updated_records": updated_records,
+            }
+
         finally:
             for temp_root in temp_roots:
+                logger.debug(f"Cleaning temporary directory: {temp_root}")
                 shutil.rmtree(temp_root, ignore_errors=True)
 
     # ------------------------------------------------------------
@@ -591,7 +714,7 @@ class InferenceToRawXMLWriter:
     def _update_df(df: pd.DataFrame, lookup: dict, new_col: str):
         df[new_col] = ""
 
-        updated = False
+        updated_count = 0
 
         for i, r in df.iterrows():
             project_name = ""
@@ -619,6 +742,6 @@ class InferenceToRawXMLWriter:
                 continue
 
             df.at[i, new_col] = xp.tree_to_string()
-            updated = True
+            updated_count += 1
 
-        return df, ([new_col] if updated else [])
+        return df, updated_count
