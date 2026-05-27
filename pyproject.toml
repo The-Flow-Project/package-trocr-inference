@@ -64,6 +64,13 @@ dev = [
   "ruff",
 ]
 
+docs = [
+    "sphinx>=8.1.0",
+    "sphinx-rtd-theme>=3.0.2",
+    "sphinx-autodoc-typehints>=2.5.0",
+    "myst-parser>=4.0.0",
+]
+
 [project.urls]
 Repository = "https://github.com/The-Flow-Project/package-trocr-inference"
 
