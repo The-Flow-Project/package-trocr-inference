@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=78.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,40 +7,38 @@ name = "flow-inference"
 version = "0.1.0"
 description = "TrOCR inference and evaluation for the Flow Project"
 readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+license = { text = "MIT" }
 
 authors = [
     { name = "Dana Rebecca Meyer", email = "dameyer@techfak.uni-bielefeld.de" },
-    { name = "Jonas Widmer", email = "jonas.widmer@unibe.ch" }
+    { name = "Jonas Widmer", email = "jonas.widmer@unibe.ch" },
 ]
 
-requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
 
-license = { text = "MIT" }
-
 dependencies = [
-  "torch>=2.6",
-  "torchvision>=0.19",
-  "transformers~=4.45.2",
-  "datasets>=3.6",
-  "huggingface-hub>=0.34",
-  "evaluate>=0.4",
-  "pandas>=2.3",
-  "numpy>=1.26",
-  "pillow>=11.0",
-  "tqdm>=4.66",
-  "pyyaml>=6.0",
-  "requests>=2.32",
-  "python-dotenv>=1.0",
-  "lxml>=5.0",
-  "setuptools>=78.1",
-  "jiwer>=3.0.4",
-  "protobuf>=4.25.0",
-  "sentencepiece>=0.2.0"
-
+    "torch>=2.6",
+    "torchvision>=0.19",
+    "transformers~=4.45.2",
+    "datasets>=3.6",
+    "huggingface-hub>=0.34",
+    "evaluate>=0.4",
+    "pandas>=2.3",
+    "numpy>=1.26",
+    "pillow>=11.0",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+    "python-dotenv>=1.0",
+    "lxml>=5.0",
+    "setuptools>=78.1",
+    "jiwer>=3.0.4",
+    "protobuf>=4.25.0",
+    "sentencepiece>=0.2.0",
 ]
 
 keywords = [
@@ -60,8 +58,9 @@ keywords = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest",
-  "ruff",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "ruff>=0.8.0",
 ]
 
 docs = [
@@ -73,9 +72,46 @@ docs = [
 
 [project.urls]
 Repository = "https://github.com/The-Flow-Project/package-trocr-inference"
+Documentation = "https://the-flow-project.github.io/package-trocr-inference/"
 
 [tool.setuptools.packages]
 find = { include = ["flow_inference*"] }
 
 [tool.setuptools.package-data]
 flow_inference = ["utils/logging/*.yaml"]
+
+[tool.ruff]
+line-length = 96
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import sorting
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "A",   # flake8-builtins
+    "C4",  # flake8-comprehensions
+    "PT",  # flake8-pytest-style
+    "SIM", # flake8-simplify
+    "D",   # pydocstyle docstring checks
+]
+ignore = [
+    "E501", # line too long; handled by formatter where possible
+    "D203", # conflicts with D211
+    "D213", # conflicts with D212
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers --tb=short --color=yes"
