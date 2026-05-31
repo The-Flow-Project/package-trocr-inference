@@ -26,14 +26,14 @@ UploadMode = Literal["new_repo", "replace", "update"]
 class HuggingFaceDataHandler:
     """Download and convert Hugging Face datasets.
 
-    Supports structure:
-      data/train/<doc_folder>/...*.parquet
-      data/test/<doc_folder>/...*.parquet
+    Supports repositories with parquet files stored under paths such as
+    ``data/train/<doc_folder>/*.parquet`` and
+    ``data/test/<doc_folder>/*.parquet``.
 
-    Also supports:
-      - train-only repos
-      - test-only repos
-      - default repos (no data/train or data/test; parquet somewhere under data/**)
+    The handler also supports train-only repositories, test-only repositories,
+    and default repositories with parquet files somewhere below ``data/**``.
+    It can preserve and update existing ``inference_*`` columns during compatible
+    update uploads.
     """
 
     # --------------------------------------------------------------------------
