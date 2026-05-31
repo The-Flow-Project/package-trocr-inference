@@ -22,6 +22,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
+    "sphinx_autodoc_typehints",
     "myst_parser",
 ]
 
@@ -32,7 +33,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 
-napoleon_google_docstring = False
+napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 
 intersphinx_mapping = {
