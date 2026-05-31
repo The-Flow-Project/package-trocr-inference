@@ -1,3 +1,4 @@
+"""Load, normalize, resize, and process images for TrOCR inference."""
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -13,26 +14,39 @@ from flow_inference.utils.logging.inference_logger import logger
 # CLASS
 # ===============================================================================
 class ImageHandler:
+    """Prepare document line images for TrOCR inference.
+
+    The handler converts raw image inputs to RGB PIL images, optionally resizes
+    them to a configured target size, and applies a TrOCR processor to produce
+    pixel tensors for model inference.
     """
-    A utility class to handle image loading, resizing, and processing.
-    """
+
     def __init__(
             self, 
             processor: TrOCRProcessor,
             target_image_size: Tuple[int, int] = None
             ):
-        """
+        """Initialize the image handler.
 
-        :param processor: a TrOCRProcessor instance.
-        :param target_image_size: the size the image should have.
+        Args:
+            processor: TrOCR processor used to convert images into model tensors.
+            target_image_size: Optional target image size as ``(width, height)``.
         """
         self.processor = processor
         self.target_image_size = target_image_size
 
     @staticmethod
     def load_image_from_bytes(image_bytes: bytes) -> Image:
-        """
-        Load an image from raw bytes and convert it to RGB.
+        """Load an RGB image from raw bytes.
+
+        Args:
+            image_bytes: Encoded image bytes.
+
+        Returns:
+            PIL image converted to RGB mode.
+
+        Raises:
+            OSError: If the bytes cannot be decoded as an image.
         """
         try:
             return Image.open(io.BytesIO(image_bytes)).convert('RGB')
@@ -40,16 +54,23 @@ class ImageHandler:
             raise IOError(f"Failed to load image from bytes: {e}")
 
     def resize_with_aspect_ratio(self, image: Image) -> Image:
-        """
-        Resize the image while maintaining the aspect ratio.
+        """Resize an image to the target size while preserving aspect ratio.
 
-        :param image: The image to apply the padding to.
-        :return: The padded image.
+        The resized image is padded to ``target_image_size`` so that the output
+        has exactly the configured dimensions.
+
+        Args:
+            image: PIL image to resize and pad.
+
+        Returns:
+            Resized and padded RGB image.
+
+        Raises:
+            ValueError: If no target image size is configured or resizing fails.
         """
         try:
             image.thumbnail(self.target_image_size, Image.Resampling.LANCZOS)
 
-            # Create a new image with a white background and paste the resized image into it
             padded_image = ImageOps.pad(
                 image,
                 self.target_image_size,
@@ -63,11 +84,16 @@ class ImageHandler:
             raise Exception(f"Unexpected error during resizing: {str(e)}")
 
     def process_image(self, image: Image) -> torch.Tensor:
-        """
-        Process an image using the provided processor (resize, normalize, etc.).
+        """Convert a PIL image into a TrOCR pixel tensor.
 
-        :param: The PIL image to process.
-        :return: The processed image as a torch.Tensor.
+        Args:
+            image: PIL image to process.
+
+        Returns:
+            Pixel tensor expected by the TrOCR model.
+
+        Raises:
+            ValueError: If the processor cannot process the image.
         """
         try:
             return self.processor(image, return_tensors='pt').pixel_values.squeeze()
@@ -77,16 +103,18 @@ class ImageHandler:
             raise Exception(f"Unexpected error during image processing: {str(e)}")
 
     def handle_image(self, record: Dict[str, Any]) -> torch.Tensor:
-        """
-        Process a single record containing image bytes and metadata.
+        """Extract, normalize, resize, and process an image record.
 
-        Expected record format examples:
-        {
-            "image": bytes | {"bytes": bytes, "path": None} | PIL.Image,
-            "filename": str,
-            "line_id": str,
-            ...
-        }
+        Args:
+            record: Dataset record containing an ``image`` field and optional
+                metadata such as ``filename`` and ``line_id``.
+
+        Returns:
+            Pixel tensor ready for TrOCR inference.
+
+        Raises:
+            ValueError: If the record does not contain an image field.
+            TypeError: If the image value has an unsupported type.
         """
         filename = record.get("filename", "<unknown>")
 

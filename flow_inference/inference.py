@@ -1,3 +1,11 @@
+"""Run the end-to-end TrOCR inference workflow for Hugging Face datasets.
+
+This module downloads line-level OCR/HTR datasets, filters records for inference,
+runs TrOCR prediction on image lines, writes predictions to timestamped
+``inference_*`` columns, and optionally uploads the updated dataset to the
+Hugging Face Hub.
+"""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -19,6 +27,13 @@ REQUIRED_INFERENCE_KEY_COLUMNS = ["filename", "region_id", "line_id"]
 # CLASS
 # ===============================================================================
 class Inference:
+    """Coordinate dataset loading, TrOCR inference, result writeback, and upload.
+
+    The pipeline loads records from a Hugging Face dataset, runs line-level
+    inference with a configured TrOCR model, writes predictions back into the
+    corresponding DataFrames, and can publish the updated dataset to a target
+    Hugging Face repository.
+    """
     def __init__(self,
                  download_repo_name: str,
                  hf_token: Optional[str],
@@ -32,7 +47,24 @@ class Inference:
                  upload_mode: Literal["new_repo", "replace", "update"] = "new_repo",
                  allow_source_repo_update: bool = False,
                  ) -> None:
+        """Initialize the inference pipeline.
 
+        Args:
+            download_repo_name: Hugging Face dataset repository to download.
+            hf_token: Optional Hugging Face token used for private repositories.
+            trocr_model: Hugging Face model ID or local path for the TrOCR model.
+            target_image_size: Optional target image size as ``(width, height)``.
+            stop_on_fail: Whether to stop the workflow after an inference failure.
+            splits: Dataset splits to process. Defaults to ``["train"]``.
+            push_to_hub: Whether to upload the updated dataset after inference.
+            private_repo: Whether to create the upload repository as private.
+            upload_repo_name: Optional target dataset repository. Defaults to the source repository.
+            upload_mode: Upload behavior. Use ``"new_repo"``, ``"replace"``, or ``"update"``.
+            allow_source_repo_update: Whether uploading back into the source repository is allowed.
+
+        Raises:
+            RuntimeError: If the TrOCR model or processor cannot be loaded.
+        """
         self.download_repo_name = download_repo_name
         self.hf_token = hf_token
         self.trocr_model = trocr_model
@@ -57,12 +89,22 @@ class Inference:
 
     @staticmethod
     def _is_original_line_augmentation_value(value) -> bool:
+        """Return whether a line augmentation value marks an original line."""
         if pd.isna(value):
             return False
         return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
 
     @staticmethod
     def _validate_required_key_columns(df: pd.DataFrame, context: str) -> None:
+        """Validate that a DataFrame contains the required inference key columns.
+
+        Args:
+            df: DataFrame to validate.
+            context: Human-readable context used in error messages.
+
+        Raises:
+            RuntimeError: If required key columns are missing.
+        """
         missing = [
             col for col in REQUIRED_INFERENCE_KEY_COLUMNS
             if col not in df.columns
@@ -75,9 +117,16 @@ class Inference:
             )
 
     def _filter_records_for_inference(self, records: list[dict]) -> list[dict]:
-        """
-        If line_augmentation is absent: keep old behavior.
-        If line_augmentation is present: only infer rows where line_augmentation == 'original'.
+        """Filter records to those that should receive inference.
+
+        If no ``line_augmentation`` column is present, all records are kept. If the
+        column is present, only records marked as ``original`` are processed.
+
+        Args:
+            records: Dataset records converted from a DataFrame split.
+
+        Returns:
+            Records selected for inference.
         """
         if not records:
             return records
@@ -104,12 +153,16 @@ class Inference:
     # MAIN PIPELINE
     # ===========================================================================
     def perform_inference(self) -> Optional[Dict[str, pd.DataFrame]]:
-        """
-        Perform the complete inference workflow:
-        1. Download HF dataset
-        2. Convert to DataFrame and extract image records
-        3. Run inference on images
-        4. Write results back into the DataFrame
+        """Run the complete inference workflow.
+
+        The workflow downloads the configured dataset, converts its splits to
+        DataFrames, filters line records for inference, runs TrOCR prediction, writes
+        the predictions back into timestamped inference columns, and optionally uploads
+        the updated dataset.
+
+        Returns:
+            Updated DataFrames grouped by split name, or ``None`` if dataset loading
+            fails.
         """
         logger.info("Starting inference pipeline for Hugging Face dataset.")
 
@@ -207,8 +260,17 @@ class Inference:
             processor,
             device
     ) -> dict[tuple[str, str, str, str], list[str]]:
-        """
-        Run inference on provided image records.
+        """Run TrOCR inference on selected image records.
+
+        Args:
+            records: Dataset records containing image data and line metadata.
+            model: Loaded TrOCR-compatible model.
+            processor: TrOCR processor used for image processing and decoding.
+            device: Torch device used for model inference.
+
+        Returns:
+            Mapping from ``(project_name, filename, region_id, line_id)`` to one or more
+            predicted text strings.
         """
         logger.debug(f"Running inference on {len(records)} records.")
 
@@ -263,8 +325,14 @@ class Inference:
             inferred_lines: Dict[tuple[str, str, str, str], List[str]],
             original_df: pd.DataFrame
     ) -> pd.DataFrame:
-        """
-        Write inference results into a new timestamped column in the dataframe.
+        """Write inference predictions into a timestamped DataFrame column.
+
+        Args:
+            inferred_lines: Mapping from line identity keys to predicted text strings.
+            original_df: Original split DataFrame to update.
+
+        Returns:
+            Copy of the input DataFrame with a new ``inference_*`` column.
         """
         logger.info("Writing inference results back to DataFrame.")
 
@@ -334,9 +402,17 @@ class Inference:
     def save_results(self,
                      inferred_lines: Dict[tuple[str, str, str, str], List[str]],
                      original_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Save inference results: add new column.
-        Returns the updated DataFrame.
+        """Save inference predictions to a DataFrame.
+
+        Args:
+            inferred_lines: Mapping from line identity keys to predicted text strings.
+            original_df: Original split DataFrame to update.
+
+        Returns:
+            Updated DataFrame containing a new inference result column.
+
+        Raises:
+            Exception: If writing inference results fails.
         """
         logger.info("Saving inference results into DataFrame and updating XML fields.")
 

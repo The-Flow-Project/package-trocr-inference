@@ -1,3 +1,5 @@
+"""Provide a PyTorch dataset wrapper for TrOCR inference records."""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -11,31 +13,39 @@ from flow_inference.utils.logging.inference_logger import logger
 # CLASS
 # ===============================================================================
 class TrOCRInferenceDataset(Dataset):
-    """
-    Dataset class for TrOCR inference using Hugging Face records
-    (in-memory PIL images) instead of file paths.
+    """Represent Hugging Face records as a PyTorch dataset for TrOCR inference.
+
+    The dataset receives in-memory records, processes each record's image through
+    an ``ImageHandler``, and returns pixel tensors together with line-level
+    metadata required to map predictions back to their source document.
     """
 
     def __init__(self, records: List[Dict], image_handler: ImageHandler):
-        """
-        :param records: List of dicts, each containing:
-                        {'image': PIL.Image, 'filename': str, ...}
-        :param image_handler: An instance of ImageHandler for processing images.
+        """Initialize the inference dataset.
+
+        Args:
+            records: Hugging Face-style records containing image data and metadata.
+            image_handler: Image handler used to normalize and process record images.
         """
         self.records = records
         self.image_handler = image_handler
 
     def __len__(self) -> int:
-        """
-        Get the size of the dataset.
-        :return: Number of records to be processed.
-        """
+        """Return the number of records in the dataset."""
         return len(self.records)
 
     def __getitem__(self, idx: int) -> dict:
-        """
-        Retrieve and process an in-memory image and its metadata.
-        :param idx: Index of the image to retrieve.
+        """Process and return one inference item.
+
+        Args:
+            idx: Index of the record to retrieve.
+
+        Returns:
+            Dictionary containing processed pixel values and source metadata.
+
+        Raises:
+            ValueError: If the image record cannot be processed.
+            Exception: If an unexpected image-processing error occurs.
         """
         record = self.records[idx]
         filename = record.get("filename")

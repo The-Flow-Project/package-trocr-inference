@@ -1,3 +1,5 @@
+"""Handle Hugging Face dataset download, conversion, update, and upload workflows."""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -22,8 +24,7 @@ UploadMode = Literal["new_repo", "replace", "update"]
 # CLASS
 # ===============================================================================
 class HuggingFaceDataHandler:
-    """
-    Download and convert Hugging Face datasets.
+    """Download and convert Hugging Face datasets.
 
     Supports structure:
       data/train/<doc_folder>/...*.parquet
@@ -46,6 +47,15 @@ class HuggingFaceDataHandler:
         cache_dir: Optional[str] = None,
         revision: str = "main",
     ):
+        """Initialize the dataset handler.
+
+        Args:
+            dataset_name: Hugging Face dataset repository ID to download.
+            huggingface_token: Optional Hugging Face token used for private repositories.
+            split: Optional split or splits to load. If omitted, available splits are detected automatically.
+            cache_dir: Optional directory used for downloaded dataset snapshots.
+            revision: Dataset revision, branch, tag, or commit SHA to download.
+        """
         self.dataset_name = dataset_name
         self.huggingface_token = huggingface_token
         self.cache_dir = cache_dir
@@ -68,6 +78,7 @@ class HuggingFaceDataHandler:
     # ==========================================================================
     @staticmethod
     def _normalize_splits(split) -> Set[str]:
+        """Normalize requested split names to a lowercase set."""
         if split is None:
             return set()
         if isinstance(split, (list, tuple, set)):
@@ -79,8 +90,7 @@ class HuggingFaceDataHandler:
             cls,
             dfs: Dict[str, pd.DataFrame],
     ) -> Dict[str, pd.DataFrame]:
-        """
-        Ensure every split DataFrame has the same inference_* columns.
+        """Ensure every split DataFrame has the same inference_* columns.
 
         Hugging Face can fail when parquet files in the same dataset load have
         different schemas. This keeps additive inference columns safe across splits
@@ -109,10 +119,12 @@ class HuggingFaceDataHandler:
 
     @staticmethod
     def _exists_any(paths: List[Path]) -> bool:
+        """Return whether a path collection contains at least one item."""
         return len(paths) > 0
 
     @staticmethod
     def _has_usable_project_name(df: pd.DataFrame) -> bool:
+        """Return whether a DataFrame contains at least one non-empty project name."""
         if "project_name" not in df.columns:
             return False
 
@@ -120,6 +132,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def _key_columns_for_df(cls, df: pd.DataFrame) -> list[str]:
+        """Build the row identity columns used for update-safe DataFrame matching."""
         key = []
 
         if cls._has_usable_project_name(df):
@@ -138,8 +151,7 @@ class HuggingFaceDataHandler:
         df: pd.DataFrame,
         key: list[str],
     ) -> pd.DataFrame:
-        """
-        Add a temporary occurrence counter per update key.
+        """Add a temporary occurrence counter per update key.
 
         This lets us preserve duplicate physical rows instead of collapsing them.
         The temporary column is removed before writing parquet.
@@ -152,12 +164,14 @@ class HuggingFaceDataHandler:
 
     @staticmethod
     def _is_original_line_augmentation_value(value) -> bool:
+        """Return whether a line augmentation value marks an original line."""
         if pd.isna(value):
             return False
         return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
 
     @classmethod
     def _real_duplicate_key_columns(cls, df: pd.DataFrame) -> list[str]:
+        """Build the key columns used for real duplicate-line detection."""
         key = []
 
         if cls._has_usable_project_name(df):
@@ -168,8 +182,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def _df_for_real_duplicate_check(cls, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Return the rows that should be considered for real duplicate-line counting.
+        """Return the rows that should be considered for real duplicate-line counting.
 
         If line_augmentation is absent:
             consider all rows.
@@ -191,8 +204,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def count_real_duplicate_lines(cls, df: pd.DataFrame) -> int:
-        """
-        Count rows that participate in real duplicate line keys.
+        """Count rows that participate in real duplicate line keys.
 
         The real duplicate key is:
             filename + region_id + line_id
@@ -212,8 +224,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def count_real_duplicate_line_groups(cls, df: pd.DataFrame) -> int:
-        """
-        Count duplicate key groups, not rows.
+        """Count duplicate key groups, not rows.
 
         Example:
             3 rows with the same project_name + filename + line_id count as:
@@ -233,8 +244,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def count_real_duplicate_excess_lines(cls, df: pd.DataFrame) -> int:
-        """
-        Count only duplicate rows beyond the first occurrence.
+        """Count only duplicate rows beyond the first occurrence.
 
         Example:
             3 rows with the same project_name + filename + region_id + line_id count as:
@@ -258,8 +268,7 @@ class HuggingFaceDataHandler:
         cls,
         dfs: Dict[str, pd.DataFrame],
     ) -> Dict[str, Dict[str, int]]:
-        """
-        Count real duplicate lines per split.
+        """Count real duplicate lines per split.
 
         Returned values:
             duplicate_rows:
@@ -282,10 +291,12 @@ class HuggingFaceDataHandler:
 
     @staticmethod
     def _is_inference_column(column: str) -> bool:
+        """Return whether a column contains inference output."""
         return column.startswith("inference_")
 
     @classmethod
     def _validate_required_key_columns(cls, df: pd.DataFrame, context: str) -> None:
+        """Validate that a DataFrame contains the required line identity columns."""
         missing = [
             col for col in ["filename", "region_id", "line_id"]
             if col not in df.columns
@@ -299,6 +310,7 @@ class HuggingFaceDataHandler:
 
     @staticmethod
     def _repo_exists(api: HfApi, repo_id: str, token: Optional[str]) -> bool:
+        """Return whether a Hugging Face dataset repository exists."""
         try:
             api.dataset_info(
                 repo_id=repo_id,
@@ -316,6 +328,7 @@ class HuggingFaceDataHandler:
         repo_id: str,
         token: Optional[str],
     ) -> list[str]:
+        """List files in a Hugging Face dataset repository if it exists."""
         if not HuggingFaceDataHandler._repo_exists(api, repo_id, token):
             return []
 
@@ -326,12 +339,14 @@ class HuggingFaceDataHandler:
         )
 
     def _repo_path_for_local_path(self, local_path: Path) -> str:
+        """Convert a local snapshot path to its repository-relative path."""
         if self._local_root is None:
             raise RuntimeError("Missing local snapshot root.")
 
         return str(local_path.relative_to(self._local_root)).replace("\\", "/")
 
     def _current_parquet_repo_paths(self) -> set[str]:
+        """Return repository paths for the currently downloaded parquet files."""
         paths: set[str] = set()
 
         for parquet_files in self.parquet_paths.values():
@@ -342,6 +357,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def _base_columns(cls, df: pd.DataFrame) -> list[str]:
+        """Return non-inference columns used to validate dataset schema compatibility."""
         return [
             col
             for col in df.columns
@@ -355,6 +371,7 @@ class HuggingFaceDataHandler:
         target_df: pd.DataFrame,
         target_path: str,
     ) -> None:
+        """Validate that two parquet files have compatible non-inference schemas."""
         current_base = cls._base_columns(current_df)
         target_base = cls._base_columns(target_df)
 
@@ -376,9 +393,9 @@ class HuggingFaceDataHandler:
             target_repo: str,
             target_files: list[str],
     ) -> None:
-        """
-        For upload_mode='update':
+        """Merge existing inference columns.
 
+        For upload_mode='update':
         - Validate target parquet file layout exactly matches this run.
         - Validate target base schema matches current source schema.
         - Validate each matching parquet file has the same rows.
@@ -462,6 +479,7 @@ class HuggingFaceDataHandler:
         target_files: list[str],
         paths_that_will_be_added: set[str],
     ) -> list[CommitOperationDelete]:
+        """Build delete operations for files replaced during a replace upload."""
         operations: list[CommitOperationDelete] = []
 
         for path in target_files:
@@ -477,6 +495,7 @@ class HuggingFaceDataHandler:
     # DOWNLOAD HELPERS
     # --------------------------------------------------------------------------
     def _build_allow_patterns(self) -> list[str]:
+        """Build Hugging Face snapshot download patterns for the requested splits."""
         patterns: list[str] = []
 
         if self.auto_split:
@@ -495,6 +514,7 @@ class HuggingFaceDataHandler:
         return patterns
 
     def _download_snapshot(self, allow_patterns: list[str]) -> Path:
+        """Download the selected dataset parquet files into a local snapshot directory."""
         if not self.cache_dir:
             self.cache_dir = tempfile.mkdtemp(prefix="hf_ds_")
 
@@ -524,6 +544,7 @@ class HuggingFaceDataHandler:
         upload_repo_name: str,
         allow_source_repo_update: bool,
     ) -> None:
+        """Prevent accidental uploads into the source dataset repository."""
         if upload_repo_name == self.dataset_name and not allow_source_repo_update:
             raise RuntimeError(
                 "Refusing to upload into the source dataset repo. "
@@ -535,6 +556,7 @@ class HuggingFaceDataHandler:
         self,
         target_repo: str,
     ) -> list[CommitOperationAdd]:
+        """Build commit operations for uploading current parquet files and README."""
         operations: list[CommitOperationAdd] = []
 
         for parquet_files in self.parquet_paths.values():
@@ -553,6 +575,7 @@ class HuggingFaceDataHandler:
         self,
         target_files: list[str],
     ) -> None:
+        """Validate that the target repository parquet layout matches the current run."""
         current_parquet_paths = self._current_parquet_repo_paths()
 
         target_parquet_paths = {
@@ -581,6 +604,7 @@ class HuggingFaceDataHandler:
     # --------------------------------------------------------------------------
     @staticmethod
     def _discover_parquet_files(local_root: Path) -> dict[str, list[Path]]:
+        """Discover train, test, and default parquet files in a local dataset snapshot."""
         return {
             "train": list((local_root / "data" / "train").rglob("*.parquet")),
             "test": list((local_root / "data" / "test").rglob("*.parquet")),
@@ -588,6 +612,7 @@ class HuggingFaceDataHandler:
         }
 
     def _select_parquet_paths(self, found: dict[str, list[Path]]) -> dict[str, list[Path]]:
+        """Select parquet files that match the configured split selection."""
         parquet_paths: dict[str, list[Path]] = {}
 
         if self.auto_split:
@@ -622,6 +647,16 @@ class HuggingFaceDataHandler:
     # DOWNLOAD HUGGING FACE DATASETS
     # ==========================================================================
     def download_hf_dataset(self) -> None:
+        """Download the configured Hugging Face dataset and load its parquet splits.
+
+        The method resolves the requested dataset revision, downloads matching parquet
+        files, loads them as a Hugging Face DatasetDict, and stores the local parquet
+        file mapping for later update or upload operations.
+
+        Raises:
+            DatasetNotFoundError: If the source dataset repository does not exist.
+            RuntimeError: If no matching parquet files can be found for the requested splits.
+        """
         mode = "AUTO" if self.auto_split else "EXPLICIT"
         logger.info(
             f"Downloading dataset: {self.dataset_name} | mode={mode} | "
@@ -676,6 +711,7 @@ class HuggingFaceDataHandler:
         self,
         target_repo: str,
     ) -> Path:
+        """Download target repository parquet files used during update-mode uploads."""
         target_cache_dir = tempfile.mkdtemp(prefix="hf_target_ds_")
         target_root = Path(target_cache_dir) / "snapshot"
         target_root.mkdir(parents=True, exist_ok=True)
@@ -694,6 +730,14 @@ class HuggingFaceDataHandler:
     # CONVERSION
     # ==========================================================================
     def to_dataframe(self) -> Dict[str, pd.DataFrame]:
+        """Convert loaded Hugging Face dataset splits to pandas DataFrames.
+
+        Returns:
+            DataFrames grouped by split name.
+
+        Raises:
+            RuntimeError: If the dataset has not been downloaded yet.
+        """
         if self.dataset is None:
             raise RuntimeError("Dataset not loaded. Call download_hf_dataset() first.")
 
@@ -716,9 +760,18 @@ class HuggingFaceDataHandler:
 
     @staticmethod
     def convert_to_list_of_dicts(dfs: Dict[str, pd.DataFrame]) -> Dict[str, List[Dict]]:
+        """Convert split DataFrames to record dictionaries."""
         return {split: df.to_dict(orient="records") for split, df in dfs.items()}
 
     def convert_df_into_hf_dataset(self) -> Dataset:
+        """Convert the first stored DataFrame split into a Hugging Face Dataset.
+
+        Returns:
+            Hugging Face Dataset created from the first available DataFrame split.
+
+        Raises:
+            RuntimeError: If no DataFrame data is available.
+        """
         if self.df is None:
             raise RuntimeError("DataFrame not available. Call to_dataframe() first.")
         return Dataset.from_pandas(next(iter(self.df.values())), preserve_index=False)
@@ -728,6 +781,7 @@ class HuggingFaceDataHandler:
     # ==========================================================================
     @classmethod
     def _index_df_by_key(cls, df: pd.DataFrame, split: str) -> pd.DataFrame:
+        """Index a DataFrame by stable line identity columns for update operations."""
         key = cls._key_columns_for_df(df)
 
         for col in key:
@@ -756,6 +810,7 @@ class HuggingFaceDataHandler:
 
     @classmethod
     def _update_parquet_file(cls, local_path: Path, split_df: pd.DataFrame) -> Path:
+        """Update a local parquet file with columns from an indexed split DataFrame."""
         parquet_df = pd.read_parquet(local_path)
 
         key = cls._key_columns_for_df(parquet_df)
@@ -803,6 +858,7 @@ class HuggingFaceDataHandler:
         return local_path
 
     def _make_commit_op(self, local_path: Path) -> CommitOperationAdd:
+        """Create a Hugging Face commit operation for a local parquet file."""
         hf_path = self._repo_path_for_local_path(local_path)
         return CommitOperationAdd(path_in_repo=hf_path, path_or_fileobj=str(local_path))
 
@@ -810,6 +866,7 @@ class HuggingFaceDataHandler:
         self,
         target_repo: str,
     ) -> CommitOperationAdd:
+        """Create a Hugging Face commit operation for the generated dataset README."""
         if self.dataset is None:
             raise RuntimeError("Dataset not loaded.")
         if self.df is None:
@@ -842,6 +899,24 @@ class HuggingFaceDataHandler:
             upload_mode: UploadMode = "new_repo",
             allow_source_repo_update: bool = False,
     ) -> None:
+        """Upload the current dataset state to the Hugging Face Hub.
+
+        Depending on ``upload_mode``, this method can create a new dataset repository,
+        replace an existing repository's dataset files, or update an existing compatible
+        repository by preserving previous inference columns.
+
+        Args:
+            upload_repo_name: Target Hugging Face dataset repository ID.
+            private: Whether to create the target repository as private.
+            commit_message: Commit message used for the upload.
+            upload_mode: Upload behavior. Use ``"new_repo"``, ``"replace"``, or ``"update"``.
+            allow_source_repo_update: Whether uploading back into the source repository is allowed.
+
+        Raises:
+            RuntimeError: If required local data is missing, the target repository state is incompatible,
+                or the selected upload mode would overwrite data unintentionally.
+            ValueError: If ``upload_mode`` is not one of the supported values.
+        """
         if self.df is None:
             raise RuntimeError("No DataFrames stored. Call to_dataframe() first.")
         if not self.parquet_paths:
@@ -972,6 +1047,13 @@ class HuggingFaceDataHandler:
     # SINGLE FILE UPLOAD
     # ==========================================================================
     def upload_file(self, repo_name: str, target_path: str, content_bytes: bytes) -> None:
+        """Upload a single file to a Hugging Face dataset repository.
+
+        Args:
+            repo_name: Target Hugging Face dataset repository ID.
+            target_path: Path where the file should be stored inside the repository.
+            content_bytes: File content to upload.
+        """
         api = HfApi()
         api.upload_file(
             path_or_fileobj=content_bytes,

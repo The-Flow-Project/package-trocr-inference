@@ -1,3 +1,10 @@
+"""Run batched TrOCR inference on line-level image records.
+
+This module prepares Hugging Face-style records for PyTorch batching, runs a
+TrOCR-compatible model on processed line images, decodes generated token IDs,
+and returns predictions together with their source metadata.
+"""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -16,14 +23,20 @@ from flow_inference.utils.logging.inference_logger import logger
 # CLASS
 # ===============================================================================
 class InferenceHandler:
-    """
-    Class for performing inference on textlines.
+    """Run TrOCR inference for line-level OCR/HTR records.
+
+    The handler wraps a loaded model, processor, and device. It prepares batches
+    with line metadata, executes generation in inference mode, and returns
+    decoded text predictions mapped back to project, filename, region, and line
+    identifiers.
     """
     def __init__(self, model: PreTrainedModel, processor: TrOCRProcessor, device: torch.device):
-        """
-        :param model: the TrOCR model.
-        :param processor: The TrOCR processor used for inference.
-        :param device: cuda, mps or cpu.
+        """Initialize the inference handler.
+
+        Args:
+            model: Loaded TrOCR-compatible model used for generation.
+            processor: Processor used to decode generated token IDs.
+            device: Torch device used for inference.
         """
         self.model = model
         self.model.eval()
@@ -33,11 +46,17 @@ class InferenceHandler:
     @staticmethod
     def custom_collate_fn(batch: List[Dict[str, Union[torch.Tensor, str]]]) \
             -> Dict[str, Union[torch.Tensor, List[str]]]:
-        """
-        Custom collate function to stack image tensors and preserve metadata keys.
+        """Stack image tensors and preserve line-level metadata.
 
-        :param batch: list of dictionaries with keys 'pixel_values' and 'file_name'.
-        :return: dictionary with pixel_values, filenames, region_ids, line_ids, and project_names.
+        Args:
+            batch: Batch items produced by ``TrOCRInferenceDataset``.
+
+        Returns:
+            Dictionary containing stacked ``pixel_values`` and metadata lists for
+            filenames, region IDs, line IDs, and project names.
+
+        Raises:
+            KeyError: If a required batch item key is missing.
         """
         try:
             pixel_values = [item["pixel_values"] for item in batch]
@@ -66,15 +85,23 @@ class InferenceHandler:
                             processor: TrOCRProcessor,
                             max_new_tokens: int = 100
                             ) -> List[tuple[str, str, str, str, str]]:
-        """
-        Run batch inference.
+        """Run model generation for all batches in a DataLoader.
 
-        :param inference_dataloader: DataLoader.
-        :param model: VisionEncoderDecoderModel.
-        :param device: cuda, mps or cpu.
-        :param processor: TrOCRProcessor.
-        :param max_new_tokens: maximum number of new tokens to generate (default: 100)
-        :return list of inference results.
+        Args:
+            inference_dataloader: DataLoader yielding processed image tensors and metadata.
+            model: TrOCR-compatible model used for text generation.
+            device: Torch device used for inference.
+            processor: Processor used to decode generated token IDs.
+            max_new_tokens: Maximum number of new tokens generated per line image.
+
+        Returns:
+            Inference results as tuples of ``project_name``, ``filename``,
+            ``region_id``, ``line_id``, and predicted text.
+
+        Raises:
+            KeyError: If a required batch key is missing.
+            RuntimeError: If model generation fails.
+            ValueError: If prediction decoding fails.
         """
         inferred_txt = []
 
@@ -144,12 +171,23 @@ class InferenceHandler:
               image_handler: ImageHandler,
               **kwargs,
               ) -> List[tuple[str, str, str, str, str]]:
-        """
-        Run the inference for a dataset.
+        """Run inference for a collection of line-level records.
 
-        :param: file_names: list with the file names.
-        :param: image_handler: ImageHandler instance.
-        :return: list of inference results (for batches).
+        Args:
+            records: Hugging Face-style records containing image data and metadata.
+            image_handler: Image handler used to process record images.
+            **kwargs: Optional inference settings such as ``batch_size``,
+                ``num_workers``, and ``max_new_tokens``.
+
+        Returns:
+            Inference results as tuples of ``project_name``, ``filename``,
+            ``region_id``, ``line_id``, and predicted text.
+
+        Raises:
+            TypeError: If ``image_handler`` is not an ``ImageHandler`` instance.
+            KeyError: If required record or batch keys are missing.
+            RuntimeError: If model generation fails.
+            ValueError: If image processing or decoding fails.
         """
         max_new_tokens = kwargs.get('max_new_tokens', 64)
         batch_size = kwargs.get('batch_size', 8)

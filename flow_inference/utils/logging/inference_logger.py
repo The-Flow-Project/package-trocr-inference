@@ -1,3 +1,9 @@
+"""Configure and expose the shared inference logger.
+
+This module loads the YAML logging configuration bundled with the package,
+ensures that the local log output directory exists, and exposes the central
+``inference_logger`` instance used throughout the inference workflow.
+"""
 import logging.config
 import yaml
 import os

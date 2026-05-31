@@ -1,3 +1,11 @@
+"""Write line-level inference results back into raw XML datasets.
+
+This module combines an inference result repository with a raw XML repository,
+inserts recognized text into matching PAGE XML ``TextLine`` and ``TextRegion``
+elements, stores the updated XML in new ``inference_xml_*`` columns, and uploads
+the resulting dataset to the Hugging Face Hub.
+"""
+
 import tempfile
 from pathlib import Path
 from typing import cast, Any, Literal
@@ -22,11 +30,26 @@ UploadMode = Literal["new_repo", "replace", "update"]
 
 
 class InferenceToRawXMLWriter:
+    """Write inference output into raw XML records and upload the result.
+
+    The writer downloads a raw XML dataset and an inference result dataset from
+    the Hugging Face Hub, builds a lookup from line identifiers to inferred text,
+    inserts the text into matching XML records, and writes the updated data to a
+    new or existing target dataset repository.
+    """
     def __init__(self,
                  raw_xml_repo: str,
                  inference_repo: str,
                  token: str,
                  allow_source_repo_update: bool = False):
+        """Initialize the raw XML writeback pipeline.
+
+        Args:
+            raw_xml_repo: Source Hugging Face dataset repository containing raw XML records.
+            inference_repo: Source Hugging Face dataset repository containing inference results.
+            token: Hugging Face token used for downloading and uploading datasets.
+            allow_source_repo_update: Whether writing back into the raw XML source repository is allowed.
+        """
         self.raw_xml_repo = raw_xml_repo
         self.inference_repo = inference_repo
         self.token = token
@@ -37,6 +60,7 @@ class InferenceToRawXMLWriter:
     # ------------------------------------------------------------
     @staticmethod
     def _repo_exists(api: HfApi, repo_id: str, token: str | None) -> bool:
+        """Return whether a Hugging Face dataset repository exists."""
         try:
             api.dataset_info(
                 repo_id=repo_id,
@@ -54,6 +78,7 @@ class InferenceToRawXMLWriter:
         revision: str,
         prefix: str,
     ) -> Path:
+        """Download a fresh dataset snapshot into a temporary directory."""
         local_dir = tempfile.mkdtemp(prefix=prefix)
 
         snapshot_download(
@@ -70,6 +95,7 @@ class InferenceToRawXMLWriter:
 
     @staticmethod
     def _load_parquet_dataset_fresh(data_files):
+        """Load parquet files as a Hugging Face dataset without reusing cached data."""
         return load_dataset(
             "parquet",
             data_files=data_files,
@@ -79,6 +105,7 @@ class InferenceToRawXMLWriter:
 
     @classmethod
     def _parquet_paths_by_split(cls, root: Path, parquet_paths: list[Path]) -> dict[str, list[str]]:
+        """Group local parquet paths by dataset split name."""
         result: dict[str, list[str]] = {}
 
         for parquet_path in parquet_paths:
@@ -90,6 +117,7 @@ class InferenceToRawXMLWriter:
 
     @staticmethod
     def _split_name_for_repo_path(repo_path: str) -> str:
+        """Infer the dataset split name from a repository-relative parquet path."""
         parts = Path(repo_path).parts
 
         if len(parts) >= 3 and parts[0] == "data" and parts[1] in {"train", "test"}:
@@ -99,6 +127,7 @@ class InferenceToRawXMLWriter:
 
     @staticmethod
     def _inference_xml_columns(df: pd.DataFrame) -> list[str]:
+        """Return columns that contain XML writeback output."""
         return [
             col
             for col in df.columns
@@ -110,6 +139,7 @@ class InferenceToRawXMLWriter:
         target_files: list[str],
         paths_that_will_be_added: set[str],
     ) -> list[CommitOperationDelete]:
+        """Build delete operations for files removed during replace-mode upload."""
         operations: list[CommitOperationDelete] = []
 
         for path in target_files:
@@ -123,6 +153,7 @@ class InferenceToRawXMLWriter:
 
     @staticmethod
     def _base_columns_for_raw_xml_update(df: pd.DataFrame) -> list[str]:
+        """Return non-writeback columns used for raw XML schema compatibility checks."""
         return [
             col
             for col in df.columns
@@ -136,6 +167,7 @@ class InferenceToRawXMLWriter:
             target_df: pd.DataFrame,
             repo_path: str,
     ) -> None:
+        """Validate that raw XML source and target schemas are update-compatible."""
         source_base = set(cls._base_columns_for_raw_xml_update(source_df))
         target_base = set(cls._base_columns_for_raw_xml_update(target_df))
 
@@ -158,14 +190,11 @@ class InferenceToRawXMLWriter:
             raw_root: Path,
             raw_parquet_paths: list[Path],
     ) -> None:
-        """
-        For upload_mode='update':
+        """Preserve existing target ``inference_xml_*`` columns during update uploads.
 
         Start from the fresh raw XML source files, then copy existing target
-        inference_xml_* columns into them.
-
-        This allows the source repo to lack previous writeback columns while the
-        target repo preserves them.
+        ``inference_xml_*`` columns into them. This allows the source repo to lack
+        previous writeback columns while the target repo preserves them.
         """
         for raw_parquet_path in raw_parquet_paths:
             rel_path = raw_parquet_path.relative_to(raw_root)
@@ -215,6 +244,27 @@ class InferenceToRawXMLWriter:
             upload_mode: UploadMode = "new_repo",
             private: bool = True,
     ) -> dict:
+        """Run the raw XML writeback pipeline and upload the result.
+
+        The pipeline downloads the inference and raw XML source repositories, builds
+        a lookup from the latest inference column, writes inferred text into matching
+        XML records, stores the updated XML in a new ``inference_xml_*`` column, and
+        uploads the modified dataset to the target Hugging Face repository.
+
+        Args:
+            output_repo: Optional target repository. If omitted, the raw XML source
+                repository is used as the target.
+            upload_mode: Upload behavior. Use ``"new_repo"``, ``"replace"``, or ``"update"``.
+            private: Whether to create the target repository as private when it does not exist.
+
+        Returns:
+            Summary dictionary containing the number of updated records.
+
+        Raises:
+            RuntimeError: If repositories, parquet layouts, schemas, or XML writeback
+                inputs are incompatible with the selected upload mode.
+            ValueError: If ``upload_mode`` is not supported.
+        """
         logger.info("Starting raw XML writeback pipeline.")
 
         api = HfApi()
@@ -620,17 +670,20 @@ class InferenceToRawXMLWriter:
     # ------------------------------------------------------------
     @staticmethod
     def _build_inference_xml_column_name() -> str:
+        """Build a timestamped column name for XML writeback output."""
         timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
         return f"inference_xml_{timestamp}"
 
     @staticmethod
     def _is_original_line_augmentation_value(value) -> bool:
+        """Return whether a line augmentation value marks an original line."""
         if pd.isna(value):
             return False
         return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
 
     @staticmethod
     def _get_latest_inference_column(df: pd.DataFrame) -> str:
+        """Return the latest non-XML inference text column from a DataFrame."""
         inference_cols = [
             c for c in df.columns
             if c.startswith("inference_") and not c.startswith("inference_xml_")
@@ -643,6 +696,7 @@ class InferenceToRawXMLWriter:
 
     @classmethod
     def _build_lookup(cls, df: pd.DataFrame) -> dict:
+        """Build a lookup from document and line identifiers to inferred text."""
         inference_col = cls._get_latest_inference_column(df)
 
         required_cols = ["filename", "region_id", "line_id", inference_col]
@@ -712,6 +766,16 @@ class InferenceToRawXMLWriter:
 
     @staticmethod
     def _update_df(df: pd.DataFrame, lookup: dict, new_col: str):
+        """Write inferred XML strings into a DataFrame.
+
+        Args:
+            df: Raw XML DataFrame containing ``filename`` and ``xml_content`` columns.
+            lookup: Nested lookup of project name, filename, and line identifiers to text.
+            new_col: Name of the column that should receive updated XML strings.
+
+        Returns:
+            Updated DataFrame and number of rows where XML content changed.
+        """
         df[new_col] = ""
 
         updated_count = 0

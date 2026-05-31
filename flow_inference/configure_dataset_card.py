@@ -1,3 +1,5 @@
+"""Build Hugging Face dataset README files for dataset card in inference result repositories."""
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -8,6 +10,7 @@ from datasets import DatasetDict, Features, Sequence, Value, Image as DatasetIma
 
 @dataclass
 class ReadmeStats:
+    """Statistics used to render a Hugging Face dataset README."""
     splits_info: dict[str, int]
     split_bytes: dict[str, int]
     total_samples: int
@@ -18,6 +21,7 @@ class ReadmeStats:
 
 
 class HuggingFaceReadmeBuilder:
+    """Build a Hugging Face dataset README with metadata and dataset statistics."""
     def __init__(
             self,
             repo_id: str,
@@ -31,6 +35,7 @@ class HuggingFaceReadmeBuilder:
             tags: list[str] | None = None,
             license_name: str = "mit",
     ):
+        """Initialize the README builder."""
         self.repo_id = repo_id
         self.dataset = dataset
         self.dataframes = dataframes
@@ -53,6 +58,7 @@ class HuggingFaceReadmeBuilder:
             evaluation_info: dict[str, Any] | None = None,
             duplicate_info: dict[str, dict[str, int]] | None = None,
     ) -> "HuggingFaceReadmeBuilder":
+        """Create a README builder from dataset handler output."""
         return cls(
             repo_id=repo_id,
             dataset=dataset,
@@ -399,6 +405,7 @@ class HuggingFaceReadmeBuilder:
         return "\n".join(lines)
 
     def render(self) -> str:
+        """Render the complete README content with frontmatter and body sections."""
         stats = self._build_stats()
         frontmatter = self._render_frontmatter(stats)
         body = self._render_body(stats)

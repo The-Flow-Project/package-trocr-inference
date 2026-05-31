@@ -1,3 +1,10 @@
+"""Utilities for inserting inferred text into PAGE XML documents.
+
+This module provides helpers for loading PAGE XML files, handling XML namespaces,
+replacing direct ``TextEquiv`` elements, and writing OCR/HTR inference results
+back to ``TextLine`` and ``TextRegion`` elements.
+"""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
@@ -11,10 +18,24 @@ from flow_inference.utils.logging.inference_logger import logger
 # ===============================================================================
 # CLASS
 # ===============================================================================
+
 class XMLProcessor:
+    """Process PAGE XML documents and insert OCR/HTR inference results.
+
+    The processor wraps an XML tree, keeps track of the document namespace, and
+    provides helpers for creating and replacing ``TextEquiv`` elements. It can
+    update matching ``TextLine`` elements with inferred text and add collected
+    region-level text to the corresponding ``TextRegion`` elements.
+    """
     def __init__(self, xml_file: str) -> None:
-        """
-        Initializes the XMLProcessor with the specified XML file.
+        """Load and parse a PAGE XML file.
+
+        Args:
+            xml_file: Path to the XML file to parse.
+
+        Raises:
+            FileNotFoundError: If the XML file does not exist.
+            ValueError: If the XML file cannot be parsed.
         """
         try:
             self.tree = et.parse(xml_file)
@@ -36,9 +57,7 @@ class XMLProcessor:
 
     @staticmethod
     def from_string(xml_content: str) -> "XMLProcessor":
-        """
-        Create an XMLProcessor instance from an XML string.
-        """
+        """Create an XMLProcessor instance from an XML string."""
         try:
             tree = et.ElementTree(et.fromstring(xml_content))
         except et.ParseError as e:
@@ -60,17 +79,14 @@ class XMLProcessor:
         return instance
 
     def create_text_equiv_element(self, text: str):
-        """
-        Create a TextEquiv element with one Unicode child.
-        """
+        """Create a TextEquiv element with one Unicode child."""
         text_equiv = et.Element(f"{self.xmlns}TextEquiv")
         unicode_el = et.SubElement(text_equiv, f"{self.xmlns}Unicode")
         unicode_el.text = text
         return text_equiv
 
     def replace_direct_text_equiv(self, element, text: str) -> None:
-        """
-        Replace only direct TextEquiv children of the given element.
+        """Replace only direct TextEquiv children of the given element.
 
         This is used for both TextLine and TextRegion. It intentionally does not
         touch nested TextEquiv elements.
@@ -85,8 +101,7 @@ class XMLProcessor:
         root,
         inferred_lines: Dict[tuple[str, str], str],
     ) -> int:
-        """
-        Insert inferred text into PAGE XML.
+        """Insert inferred text into PAGE XML.
 
         Expected input:
 
@@ -156,9 +171,7 @@ class XMLProcessor:
         return updated_count
 
     def tree_to_string(self) -> str:
-        """
-        Serialize the XML tree to a string.
-        """
+        """Serialize the XML tree to a string."""
         if self.namespace_uri:
             et.register_namespace("", self.namespace_uri)
 

@@ -1,7 +1,8 @@
+"""Load TrOCR models and processors for inference."""
+
 # ===============================================================================
 # IMPORT STATEMENTS
 # ===============================================================================
-from typing import Union
 import torch
 from transformers import VisionEncoderDecoderModel, TrOCRProcessor, PreTrainedModel
 from flow_inference.utils.logging.inference_logger import logger
@@ -11,8 +12,14 @@ from flow_inference.utils.logging.inference_logger import logger
 # CLASS
 # ===============================================================================
 class ModelManager:
-    """Manages the Loading of the TrOCR model and processor"""
+    """Load TrOCR models and processors on the best available device.
+
+    The manager selects CUDA, Apple MPS, or CPU as the inference device and
+    provides helpers for loading Hugging Face vision-encoder-decoder models and
+    TrOCR processors.
+    """
     def __init__(self):
+        """Initialize the model manager and select an inference device."""
         # Check for CUDA first
         if torch.cuda.is_available():
             self.device = torch.device('cuda')
@@ -23,14 +30,21 @@ class ModelManager:
         else:
             self.device = torch.device('cpu')
 
-        print(f"Using device: {self.device}")
+        logger.info(f"Using device: {self.device}")
 
     def load_model(self, model_name: str) -> PreTrainedModel:
-        """
-        Load the TrOCR model.
+        """Load a TrOCR-compatible vision-encoder-decoder model.
 
-        :param model_name: Name or path of the TrOCR model.
-        :return: Loaded VisionEncoderDecoderModel.
+        Args:
+            model_name: Hugging Face model ID or local model path.
+
+        Returns:
+            Loaded model moved to the selected inference device and set to
+            evaluation mode.
+
+        Raises:
+            ValueError: If ``model_name`` is empty.
+            OSError: If the model cannot be loaded from the given ID or path.
         """
         if not model_name:
             raise ValueError("Model name must not be empty.")
@@ -48,6 +62,21 @@ class ModelManager:
 
     @staticmethod
     def load_processor(processor_name: str) -> TrOCRProcessor:
+        """Load a TrOCR processor with fast-tokenizer fallback.
+
+        The method first tries to load the processor with ``use_fast=True`` and
+        falls back to ``use_fast=False`` if that fails.
+
+        Args:
+            processor_name: Hugging Face processor ID or local processor path.
+
+        Returns:
+            Loaded TrOCR processor.
+
+        Raises:
+            ValueError: If ``processor_name`` is empty.
+            RuntimeError: If both fast and slow processor loading fail.
+        """
         if not processor_name:
             raise ValueError("processor_name must not be empty.")
 

@@ -1,3 +1,10 @@
+"""Evaluate OCR/HTR inference results stored in Hugging Face datasets.
+
+This module loads an inference result dataset, selects evaluation rows with both
+ground-truth text and predictions, computes Character Error Rate (CER), uploads
+evaluation artifacts, and refreshes the dataset README with evaluation metadata.
+"""
+
 import json
 from datetime import datetime
 from typing import List, Optional, Dict
@@ -10,12 +17,28 @@ from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 
 
 class Evaluation:
+    """Run CER evaluation for a Hugging Face inference result dataset.
+
+    The evaluator downloads a dataset, selects the requested split or a default
+    evaluation split, finds the latest inference column, computes CER against the
+    ``text`` ground-truth column, and uploads evaluation artifacts back to the
+    dataset repository.
+    """
+
     def __init__(
         self,
         evaluation_repo_name: str,
         hf_token: Optional[str],
         splits: Optional[List[str]] = None,
     ):
+        """Initialize the evaluator.
+
+        Args:
+            evaluation_repo_name: Hugging Face dataset repository containing inference results.
+            hf_token: Optional Hugging Face token used for private repositories.
+            splits: Optional split names to evaluate. If omitted, ``test`` is preferred
+                over ``train``.
+        """
         self.download_repo_name = evaluation_repo_name
         self.hf_token = hf_token
         self.splits = splits
@@ -30,14 +53,29 @@ class Evaluation:
     # LOAD DATA
     # --------------------------------------------------------------------------
     def load_dataset(self) -> Dict[str, pd.DataFrame]:
-        """Download dataset and convert to DataFrames."""
+        """Download the evaluation dataset and convert its splits to DataFrames.
+
+        Returns:
+            DataFrames grouped by split name.
+        """
         self.data_handler.download_hf_dataset()
         dfs = self.data_handler.to_dataframe()
         return dfs
 
     def select_splits(self, dfs: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Select splits."""
-        # requested splits
+        """Select the DataFrame rows to evaluate.
+
+        Args:
+            dfs: DataFrames grouped by split name.
+
+        Returns:
+            Concatenated DataFrame for requested splits, or the default evaluation split.
+
+        Raises:
+            ValueError: If a requested split does not exist.
+            RuntimeError: If no requested split is provided and neither ``test`` nor
+                ``train`` is available.
+        """
         if self.splits:
             chosen = []
             for split in self.splits:
@@ -60,6 +98,17 @@ class Evaluation:
     # --------------------------------------------------------------------------
     @staticmethod
     def _extract_ground_truth(df: pd.DataFrame) -> List[str]:
+        """Extract ground-truth text lines from an evaluation DataFrame.
+
+        Args:
+            df: DataFrame containing a ``text`` column.
+
+        Returns:
+            Ground-truth text values as strings.
+
+        Raises:
+            ValueError: If the ``text`` column is missing.
+        """
         if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
         return df["text"].fillna("").astype(str).tolist()
@@ -69,6 +118,19 @@ class Evaluation:
     # --------------------------------------------------------------------------
     @staticmethod
     def _find_latest_inference_column(df: pd.DataFrame) -> str:
+        """Find the latest plain inference column in a DataFrame.
+
+        XML writeback columns named ``inference_xml_*`` are ignored.
+
+        Args:
+            df: DataFrame containing inference output columns.
+
+        Returns:
+            Name of the latest inference column.
+
+        Raises:
+            ValueError: If no suitable inference column exists.
+        """
         cols = [col for col in df.columns if col.startswith("inference_")
                 and not col.startswith("inference_xml_")]
         if not cols:
@@ -89,15 +151,39 @@ class Evaluation:
 
     @staticmethod
     def _extract_hypothesis(df: pd.DataFrame, column: str) -> List[str]:
+        """Extract predicted text lines from an inference column.
+
+        Args:
+            df: Evaluation DataFrame.
+            column: Name of the inference column to extract.
+
+        Returns:
+            Predicted text values as strings.
+
+        Raises:
+            ValueError: If the requested column is missing.
+        """
         if column not in df.columns:
             raise ValueError(f"Hypothesis column '{column}' not found.")
         return df[column].fillna("").astype(str).tolist()
 
     @staticmethod
     def _filter_eval_rows(df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
-        """
-        Keep only rows where both GT and prediction exist.
-        If line_augmentation exists, evaluate only original rows.
+        """Keep rows with both ground truth and prediction text.
+
+        If the dataset contains a ``line_augmentation`` column, only rows marked as
+        ``original`` are evaluated.
+
+        Args:
+            df: DataFrame containing ground-truth and inference text.
+            inference_col: Inference column to evaluate.
+
+        Returns:
+            Filtered DataFrame containing valid evaluation rows.
+
+        Raises:
+            ValueError: If required columns are missing.
+            RuntimeError: If no valid rows remain after filtering.
         """
         if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
@@ -130,6 +216,15 @@ class Evaluation:
     # --------------------------------------------------------------------------
     @staticmethod
     def compute_cer(gt: List[str], hyp: List[str]) -> float:
+        """Compute Character Error Rate for predictions.
+
+        Args:
+            gt: Ground-truth text lines.
+            hyp: Predicted text lines.
+
+        Returns:
+            Character Error Rate as a float.
+        """
         cer = load("cer")
         cer.add_batch(predictions=hyp, references=gt)
         return cer.compute()
@@ -144,7 +239,17 @@ class Evaluation:
             cer_score: float,
             timestamp: str,
     ) -> Dict[str, bytes]:
+        """Create evaluation artifact files.
 
+        Args:
+            groundtruth: Ground-truth text lines.
+            hypothesis: Predicted text lines.
+            cer_score: Computed Character Error Rate.
+            timestamp: Evaluation timestamp.
+
+        Returns:
+            Mapping of artifact filenames to UTF-8 encoded file content.
+        """
         report = {
             "timestamp": timestamp,
             "repo_name": self.download_repo_name,
@@ -164,6 +269,15 @@ class Evaluation:
     # UPLOAD FILES
     # --------------------------------------------------------------------------
     def upload_results(self, files: Dict[str, bytes], timestamp: str) -> str:
+        """Upload evaluation artifact files to the dataset repository.
+
+        Args:
+            files: Mapping of filenames to file content.
+            timestamp: Timestamp used to create the evaluation output directory.
+
+        Returns:
+            Repository path where the evaluation artifacts were uploaded.
+        """
         evaluation_path = f"evaluation/{timestamp}/"
 
         for file_name, content in files.items():
@@ -184,6 +298,19 @@ class Evaluation:
             timestamp: str,
             evaluation_path: str,
     ) -> None:
+        """Regenerate and upload the dataset README with evaluation metadata.
+
+        Args:
+            dfs: DataFrames grouped by split name.
+            inference_col: Inference column that was evaluated.
+            cer_score: Computed Character Error Rate.
+            eval_rows: Number of evaluated rows.
+            timestamp: Evaluation timestamp.
+            evaluation_path: Repository path containing evaluation artifacts.
+
+        Raises:
+            RuntimeError: If dataset metadata or parquet path information is unavailable.
+        """
         if self.data_handler.dataset is None:
             raise RuntimeError("Dataset metadata not loaded.")
         if not self.data_handler.parquet_paths:
@@ -221,6 +348,15 @@ class Evaluation:
     # MAIN EVALUATION PIPELINE
     # --------------------------------------------------------------------------
     def perform_evaluation(self) -> Dict[str, bytes]:
+        """Run the full evaluation pipeline.
+
+        The pipeline downloads the dataset, selects evaluation rows, computes CER,
+        uploads evaluation artifacts, refreshes the dataset README, and returns the
+        generated output files.
+
+        Returns:
+            Mapping of generated evaluation artifact filenames to file content.
+        """
         logger.info(f"Starting evaluation for repo: {self.download_repo_name}")
 
         # 1) Load dataset
