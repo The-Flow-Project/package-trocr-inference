@@ -87,7 +87,7 @@ Required columns for inference:
 - ``region_id``: parent text region identifier
 - ``line_id``: text line identifier
 
-Required column for evaluation:
+Required columns for evaluation:
 
 - ``text``: ground-truth transcription
 - ``inference_*``: column containing model predictions to evaluate (created by the inference workflow)
