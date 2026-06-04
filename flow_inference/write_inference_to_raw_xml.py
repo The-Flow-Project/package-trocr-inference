@@ -18,7 +18,7 @@ from huggingface_hub import (
     CommitOperationDelete,
 )
 from huggingface_hub.utils import HfHubHTTPError
-from datasets import load_dataset, DatasetDict
+from datasets import load_dataset, DatasetDict, Dataset, Image as DatasetImage
 
 from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
 from flow_inference.utils.logging.inference_logger import logger
@@ -102,6 +102,33 @@ class InferenceToRawXMLWriter:
             cache_dir=tempfile.mkdtemp(prefix="hf_parquet_cache_"),
             download_mode="force_redownload",
         )
+
+    @staticmethod
+    def _restore_image_feature(dataset: Dataset | DatasetDict) -> Dataset | DatasetDict:
+        """
+        Restore Hugging Face Image feature metadata after pandas/parquet conversion.
+
+        Pandas preserves the physical image data as {'bytes': ..., 'path': ...},
+        but Hugging Face may infer it as a plain struct unless it is cast it back.
+        """
+        if isinstance(dataset, DatasetDict):
+            restored = DatasetDict()
+
+            for split_name, split_dataset in dataset.items():
+                if "image" in split_dataset.column_names:
+                    split_dataset = split_dataset.cast_column(
+                        "image",
+                        DatasetImage(decode=False),
+                    )
+
+                restored[split_name] = split_dataset
+
+            return restored
+
+        if "image" in dataset.column_names:
+            return dataset.cast_column("image", DatasetImage(decode=False))
+
+        return dataset
 
     @classmethod
     def _parquet_paths_by_split(cls, root: Path, parquet_paths: list[Path]) -> dict[str, list[str]]:
@@ -538,6 +565,8 @@ class InferenceToRawXMLWriter:
 
             if not isinstance(raw_dataset, DatasetDict):
                 raw_dataset = DatasetDict({"default": raw_dataset})
+
+            raw_dataset = self._restore_image_feature(raw_dataset)
 
             logger.info(
                 f"Final raw XML dataset prepared with splits={list(combined_dfs.keys())}."

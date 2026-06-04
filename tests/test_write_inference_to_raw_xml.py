@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
-from datasets import load_dataset
+from datasets import load_dataset, Dataset, DatasetDict, Image as DatasetImage
 import pandas as pd
 from dotenv import load_dotenv
 from huggingface_hub import HfApi
@@ -236,6 +236,29 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
         self.assertRegex(col, r"^inference_xml_\d{8}_\d{6}$")
         self.assertNotIn("_from_", col)
+
+    # --------------------------------------------------
+    # UNIT TEST: BUILD IMAGE COLUMN
+    # --------------------------------------------------
+    def test_restore_image_feature_casts_image_column(self):
+        dataset = Dataset.from_dict({
+            "image": [
+                {
+                    "bytes": b"\x89PNG\r\n\x1a\n",
+                    "path": None,
+                }
+            ],
+            "project_name": ["p1"],
+            "filename": ["a.xml"],
+            "xml_content": [SAMPLE_XML],
+        })
+
+        dataset_dict = DatasetDict({"train": dataset})
+
+        restored = self.writer._restore_image_feature(dataset_dict)
+
+        self.assertIsInstance(restored["train"].features["image"], DatasetImage)
+        self.assertFalse(restored["train"].features["image"].decode)
 
     # --------------------------------------------------
     # UNIT TEST: PROCESS AND UPLOAD
