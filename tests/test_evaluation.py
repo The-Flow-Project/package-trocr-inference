@@ -301,6 +301,18 @@ class TestEvaluation(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
+    def test_restore_image_feature_casts_image_column(self):
+        from datasets import Dataset, Image as DatasetImage
+
+        ds = Dataset.from_dict({
+            "image": [{"bytes": b"fake-image-bytes", "path": None}],
+            "text": ["hello"],
+        })
+
+        restored = self.evaluator._restore_image_feature(ds)
+
+        self.assertIsInstance(restored.features["image"], DatasetImage)
+
 
 if __name__ == "__main__":
     unittest.main()

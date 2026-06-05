@@ -14,6 +14,7 @@ from flow_inference.data_handling import HuggingFaceDataHandler
 from flow_inference.status import Status
 from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.configure_dataset_card import HuggingFaceReadmeBuilder
+from datasets import Dataset, DatasetDict, Image as DatasetImage
 
 
 class Evaluation:
@@ -53,12 +54,15 @@ class Evaluation:
     # LOAD DATA
     # --------------------------------------------------------------------------
     def load_dataset(self) -> Dict[str, pd.DataFrame]:
-        """Download the evaluation dataset and convert its splits to DataFrames.
-
-        Returns:
-            DataFrames grouped by split name.
-        """
         self.data_handler.download_hf_dataset()
+
+        if self.data_handler.dataset is None:
+            raise RuntimeError("Dataset metadata not loaded.")
+
+        self.data_handler.dataset = self._restore_image_feature(
+            self.data_handler.dataset
+        )
+
         dfs = self.data_handler.to_dataframe()
         return dfs
 
@@ -92,6 +96,34 @@ class Evaluation:
 
         # If a dataset does not contain either train or test splits
         raise RuntimeError("Dataset has neither 'train' nor 'test' split.")
+
+    @staticmethod
+    def _restore_image_feature(dataset: Dataset | DatasetDict) -> Dataset | DatasetDict:
+        """
+        Restore Hugging Face Image feature metadata.
+
+        Parquet image columns can be loaded as plain structs with bytes/path.
+        Casting the column back to datasets.Image helps README generation keep
+        the image column as an Image feature instead of a raw struct.
+        """
+        if isinstance(dataset, DatasetDict):
+            restored = DatasetDict()
+
+            for split_name, split_dataset in dataset.items():
+                if "image" in split_dataset.column_names:
+                    split_dataset = split_dataset.cast_column(
+                        "image",
+                        DatasetImage(decode=False),
+                    )
+
+                restored[split_name] = split_dataset
+
+            return restored
+
+        if "image" in dataset.column_names:
+            return dataset.cast_column("image", DatasetImage(decode=False))
+
+        return dataset
 
     # --------------------------------------------------------------------------
     # GROUND TRUTH EXTRACTION
