@@ -599,6 +599,49 @@ class HuggingFaceDataHandler:
                 f"Missing target parquet files:\n{missing_formatted}"
             )
 
+    def validate_upload_target(
+            self,
+            upload_repo_name: str,
+            upload_mode: UploadMode = "new_repo",
+            allow_source_repo_update: bool = False,
+    ) -> None:
+        """Validate target repository settings before expensive processing starts.
+
+        This catches cheap upload-mode and source-update errors early. Full update
+        compatibility checks still happen later during push_to_hub(), after the
+        source parquet layout is known.
+        """
+        if upload_mode not in {"new_repo", "replace", "update"}:
+            raise ValueError(
+                "upload_mode must be one of: 'new_repo', 'replace', 'update'"
+            )
+
+        self._validate_source_repo_update_allowed(
+            upload_repo_name=upload_repo_name,
+            allow_source_repo_update=allow_source_repo_update,
+        )
+
+        api = HfApi()
+
+        target_exists = self._repo_exists(
+            api=api,
+            repo_id=upload_repo_name,
+            token=self.huggingface_token,
+        )
+
+        if target_exists and upload_mode == "new_repo":
+            raise RuntimeError(
+                f"Target dataset repo '{upload_repo_name}' already exists. "
+                "Use upload_mode='update' to add inference columns to an existing compatible repo, "
+                "or upload_mode='replace' to replace the target dataset contents."
+            )
+
+        if not target_exists and upload_mode == "update":
+            raise RuntimeError(
+                f"Target dataset repo '{upload_repo_name}' does not exist. "
+                "Use upload_mode='new_repo' to create it."
+            )
+
     # --------------------------------------------------------------------------
     # SPLIT SELECTION
     # --------------------------------------------------------------------------

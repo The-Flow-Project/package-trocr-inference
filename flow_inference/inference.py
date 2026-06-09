@@ -176,6 +176,13 @@ class Inference:
             split=self.requested_splits,
         )
 
+        if self.push_to_hub:
+            loader.validate_upload_target(
+                upload_repo_name=self.upload_repo_name,
+                upload_mode=self.upload_mode,
+                allow_source_repo_update=self.allow_source_repo_update,
+            )
+
         try:
             loader.download_hf_dataset()
             dfs = loader.to_dataframe()
