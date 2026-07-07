@@ -6,6 +6,7 @@ evaluation artifacts, and refreshes the dataset README with evaluation metadata.
 """
 
 import json
+import re
 from datetime import datetime
 from typing import List, Optional, Dict
 import pandas as pd
@@ -163,20 +164,47 @@ class Evaluation:
         Raises:
             ValueError: If no suitable inference column exists.
         """
-        cols = [col for col in df.columns if col.startswith("inference_")
-                and not col.startswith("inference_xml_")]
+        cols = [
+            str(col)
+            for col in df.columns
+            if str(col).startswith("inference_")
+               and not str(col).startswith("inference_xml_")
+        ]
+
         if not cols:
             raise ValueError("No inference column found.")
 
-        # Extract timestamp from each column
-        timestamps = []
-        for col in cols:
-            parts = col.split("_", 2)
-            ts = parts[1] if len(parts) > 1 else ""
-            timestamps.append((ts, col))
+        pattern = re.compile(
+            r"^inference_"
+            r"(\d{8})_"  # YYYYMMDD
+            r"(\d{6})_"  # HHMMSS
+            r"(\d{6})_"  # microseconds
+            r"model_"
+        )
 
-        # Pick column with max timestamp
-        latest_timestamp, latest_col = max(timestamps, key=lambda x: x[0])
+        timestamped_columns: list[tuple[str, str]] = []
+
+        for col in cols:
+            match = pattern.match(col)
+
+            if match:
+                sortable_timestamp = "".join(match.groups())
+                timestamped_columns.append(
+                    (sortable_timestamp, col)
+                )
+
+        if timestamped_columns:
+            _, latest_col = max(
+                timestamped_columns,
+                key=lambda item: item[0],
+            )
+        else:
+            # Compatibility fallback for older or custom inference column names.
+            latest_col = max(cols)
+            logger.warning(
+                "No inference columns followed the expected timestamp format. "
+                f"Using lexicographic fallback: {latest_col}"
+            )
 
         logger.info(f"Using latest inference column: {latest_col}")
         return latest_col
@@ -200,46 +228,49 @@ class Evaluation:
         return df[column].fillna("").astype(str).tolist()
 
     @staticmethod
-    def _filter_eval_rows(df: pd.DataFrame, inference_col: str) -> pd.DataFrame:
-        """Keep rows with both ground truth and prediction text.
+    def _filter_eval_rows(
+            df: pd.DataFrame,
+            inference_col: str,
+    ) -> pd.DataFrame:
+        """Keep all rows containing both ground truth and prediction text.
 
-        If the dataset contains a ``line_augmentation`` column, only rows marked as
-        ``original`` are evaluated.
+        Original and augmented rows are evaluated equally. The
+        ``line_augmentation`` column, when present, does not affect row selection.
 
         Args:
             df: DataFrame containing ground-truth and inference text.
             inference_col: Inference column to evaluate.
 
         Returns:
-            Filtered DataFrame containing valid evaluation rows.
+            All rows containing non-empty ground truth and prediction text.
 
         Raises:
             ValueError: If required columns are missing.
-            RuntimeError: If no valid rows remain after filtering.
+            RuntimeError: If no valid evaluation rows remain.
         """
         if "text" not in df.columns:
             raise ValueError("Dataset has no 'text' column for GT.")
+
         if inference_col not in df.columns:
-            raise ValueError(f"Inference column '{inference_col}' not found.")
+            raise ValueError(
+                f"Inference column '{inference_col}' not found."
+            )
 
-        work_df = df.copy()
+        gt = df["text"].fillna("").astype(str).str.strip()
+        hyp = df[inference_col].fillna("").astype(str).str.strip()
 
-        if "line_augmentation" in work_df.columns:
-            aug = work_df["line_augmentation"].fillna("").astype(str).str.strip().str.lower()
-            work_df = work_df[aug == "original"].copy()
-
-        gt = work_df["text"].fillna("").astype(str).str.strip()
-        hyp = work_df[inference_col].fillna("").astype(str).str.strip()
-
-        df_eval = work_df[(gt != "") & (hyp != "")].copy()
+        df_eval = df[(gt != "") & (hyp != "")].copy()
 
         logger.info(
             f"Evaluation rows: {len(df_eval)} / {len(df)} "
-            f"(original rows with non-empty GT + non-empty prediction)"
+            f"(all rows with non-empty GT and non-empty prediction)"
         )
 
-        if len(df_eval) == 0:
-            raise RuntimeError("No rows with both ground truth and inference available for evaluation.")
+        if df_eval.empty:
+            raise RuntimeError(
+                "No rows with both ground truth and inference available "
+                "for evaluation."
+            )
 
         return df_eval
 
@@ -382,8 +413,8 @@ class Evaluation:
     def perform_evaluation(self) -> Dict[str, bytes]:
         """Run the full evaluation pipeline.
 
-        The pipeline downloads the dataset, selects evaluation rows, computes CER,
-        uploads evaluation artifacts, refreshes the dataset README, and returns the
+        The pipeline downloads the dataset, evaluates OCR/HTR inference results for all valid dataset rows,
+        computes CER, uploads evaluation artifacts, refreshes the dataset README, and returns the
         generated output files.
 
         Returns:

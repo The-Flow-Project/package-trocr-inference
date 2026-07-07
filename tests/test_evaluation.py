@@ -146,13 +146,24 @@ class TestEvaluation(unittest.TestCase):
     # -------------------------------------------------------------
     def test_evaluation_computes_cer_on_valid_overlap(self):
         df = pd.DataFrame({
-            "text": ["hello", "", "world"],
-            "inference_x": ["hallo", "xxx", "world"],
+            "text": ["hello", "world", "ignored"],
+            "inference_x": ["hallo", "world", ""],
+            "line_augmentation": [
+                "original",
+                '{"rotation": 1}',
+                '{"blur": 1}',
+            ],
         })
 
         evaluator = Evaluation("dummy", None)
 
         df_eval = evaluator._filter_eval_rows(df, "inference_x")
+
+        self.assertEqual(len(df_eval), 2)
+        self.assertEqual(
+            df_eval["line_augmentation"].tolist(),
+            ["original", '{"rotation": 1}'],
+        )
 
         gt = evaluator._extract_ground_truth(df_eval)
         hyp = evaluator._extract_hypothesis(df_eval, "inference_x")
@@ -312,6 +323,44 @@ class TestEvaluation(unittest.TestCase):
         restored = self.evaluator._restore_image_feature(ds)
 
         self.assertIsInstance(restored.features["image"], DatasetImage)
+
+    def test_filter_eval_rows_includes_original_and_augmented_rows(self):
+        df = pd.DataFrame({
+            "text": [
+                "ground truth original",
+                "ground truth rotated",
+                "ground truth blurred",
+                "missing prediction",
+            ],
+            "inference_x": [
+                "prediction original",
+                "prediction rotated",
+                "prediction blurred",
+                "",
+            ],
+            "line_augmentation": [
+                "original",
+                '{"rotation": 1}',
+                '{"blur": 2}',
+                "original",
+            ],
+        })
+
+        df_eval = self.evaluator._filter_eval_rows(
+            df=df,
+            inference_col="inference_x",
+        )
+
+        self.assertEqual(len(df_eval), 3)
+
+        self.assertEqual(
+            df_eval["line_augmentation"].tolist(),
+            [
+                "original",
+                '{"rotation": 1}',
+                '{"blur": 2}',
+            ],
+        )
 
 
 if __name__ == "__main__":
