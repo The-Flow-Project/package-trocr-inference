@@ -1,7 +1,7 @@
 """Run the end-to-end TrOCR inference workflow for Hugging Face datasets.
 
-This module downloads line-level OCR/HTR datasets, filters records for inference,
-runs TrOCR prediction on image lines, writes predictions to timestamped
+This module downloads line-level OCR/HTR datasets, runs inference on all line
+records, runs TrOCR prediction on image lines, writes predictions to timestamped
 ``inference_*`` columns, and optionally uploads the updated dataset to the
 Hugging Face Hub.
 """
@@ -19,8 +19,6 @@ from flow_inference.utils.logging.inference_logger import logger
 from flow_inference.infer_textlines import InferenceHandler
 import pandas as pd
 
-LINE_AUGMENTATION_COLUMN = "line_augmentation"
-ORIGINAL_LINE_AUGMENTATION_VALUE = "original"
 REQUIRED_INFERENCE_KEY_COLUMNS = ["filename", "region_id", "line_id"]
 
 # ===============================================================================
@@ -88,13 +86,6 @@ class Inference:
         logger.debug(f"Inference initialized with Hugging Face dataset: {download_repo_name}")
 
     @staticmethod
-    def _is_original_line_augmentation_value(value) -> bool:
-        """Return whether a line augmentation value marks an original line."""
-        if pd.isna(value):
-            return False
-        return str(value).strip().lower() == ORIGINAL_LINE_AUGMENTATION_VALUE
-
-    @staticmethod
     def _validate_required_key_columns(df: pd.DataFrame, context: str) -> None:
         """Validate that a DataFrame contains the required inference key columns.
 
@@ -116,38 +107,11 @@ class Inference:
                 "Required columns are filename, region_id, and line_id."
             )
 
-    def _filter_records_for_inference(self, records: list[dict]) -> list[dict]:
-        """Filter records to those that should receive inference.
-
-        If no ``line_augmentation`` column is present, all records are kept. If the
-        column is present, only records marked as ``original`` are processed.
-
-        Args:
-            records: Dataset records converted from a DataFrame split.
-
-        Returns:
-            Records selected for inference.
-        """
-        if not records:
-            return records
-
-        if not any(LINE_AUGMENTATION_COLUMN in record for record in records):
-            return records
-
-        filtered = [
-            record
-            for record in records
-            if self._is_original_line_augmentation_value(
-                record.get(LINE_AUGMENTATION_COLUMN)
-            )
-        ]
-
-        logger.info(
-            f"{LINE_AUGMENTATION_COLUMN} detected: processing "
-            f"{len(filtered)} original rows out of {len(records)} total rows."
-        )
-
-        return filtered
+    def _build_inference_column_name(self) -> str:
+        """Create one timestamped inference column name for the current run."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        model_name = self.trocr_model.replace("/", "_")
+        return f"inference_{timestamp}_model_{model_name}"
 
     # ===========================================================================
     # MAIN PIPELINE
@@ -156,7 +120,7 @@ class Inference:
         """Run the complete inference workflow.
 
         The workflow downloads the configured dataset, converts its splits to
-        DataFrames, filters line records for inference, runs TrOCR prediction, writes
+        DataFrames, runs inference on every record in the selected splits, runs TrOCR prediction, writes
         the predictions back into timestamped inference columns, and optionally uploads
         the updated dataset.
 
@@ -193,14 +157,9 @@ class Inference:
             logger.error(f"Failed to load dataset from Hugging Face: {e}")
             return None
 
-        records_for_inference = {
-            split: self._filter_records_for_inference(recs)
-            for split, recs in records.items()
-        }
-
         total_records = sum(
             len(recs)
-            for split, recs in records_for_inference.items()
+            for split, recs in records.items()
             if split in self.requested_splits or split == "default"
         )
 
@@ -216,7 +175,7 @@ class Inference:
 
         inferred: Dict[str, Dict[tuple[str, str, str, str], List[str]]] = {}
 
-        for split, recs in records_for_inference.items():
+        for split, recs in records.items():
             if split in self.requested_splits or split == "default":
                 result = self.run_inference(
                     records=recs,
@@ -232,12 +191,15 @@ class Inference:
         # STEP 3: Write inference results
         # -------------------------------
         logger.debug("Writing inference results to all DataFrames.")
+
+        inference_column = self._build_inference_column_name()
         updated_dfs = {}
 
         for split, df_split in dfs.items():
             updated_dfs[split] = self.save_results(
                 inferred_lines=inferred[split],
-                original_df=df_split
+                original_df=df_split,
+                inference_column=inference_column,
             )
 
         if self.push_to_hub:
@@ -330,13 +292,15 @@ class Inference:
     def write_inference_to_dataframe(
             self,
             inferred_lines: Dict[tuple[str, str, str, str], List[str]],
-            original_df: pd.DataFrame
+            original_df: pd.DataFrame,
+            inference_column: Optional[str] = None,
     ) -> pd.DataFrame:
         """Write inference predictions into a timestamped DataFrame column.
 
         Args:
             inferred_lines: Mapping from line identity keys to predicted text strings.
             original_df: Original split DataFrame to update.
+            inference_column: column name of inference column.
 
         Returns:
             Copy of the input DataFrame with a new ``inference_*`` column.
@@ -345,9 +309,7 @@ class Inference:
 
         updated_df = original_df.copy()
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        model_name = self.trocr_model.replace("/", "_")
-        new_col = f"inference_{timestamp}_model_{model_name}"
+        new_col = inference_column or self._build_inference_column_name()
 
         updated_df[new_col] = ""
         updated_df[new_col] = updated_df[new_col].astype("string")
@@ -365,37 +327,41 @@ class Inference:
             if (
                     "project_name" in updated_df.columns
                     and str(project).strip()
-                    and updated_df["project_name"].fillna("").astype(str).str.strip().ne("").any()
+                    and updated_df["project_name"]
+                    .fillna("")
+                    .astype(str)
+                    .str.strip()
+                    .ne("")
+                    .any()
             ):
                 mask = cast(
                     pd.Series,
                     mask
-                    & (updated_df["project_name"].fillna("").astype(str) == str(project))
-                )
-
-            if LINE_AUGMENTATION_COLUMN in updated_df.columns:
-                mask = cast(
-                    pd.Series,
-                    mask
-                    & updated_df[LINE_AUGMENTATION_COLUMN].apply(
-                        self._is_original_line_augmentation_value
-                    )
+                    & (
+                            updated_df["project_name"]
+                            .fillna("")
+                            .astype(str)
+                            == str(project)
+                    ),
                 )
 
             matching_indices = list(updated_df.index[mask])
 
             if not matching_indices:
                 logger.warning(
-                    f"No matching row found for project='{project}', filename='{filename}', "
-                    f"region_id='{region_id}', line_id='{line_id}'"
+                    f"No matching row found for project='{project}', "
+                    f"filename='{filename}', region_id='{region_id}', "
+                    f"line_id='{line_id}'"
                 )
                 continue
 
             if len(texts) != len(matching_indices):
                 logger.warning(
                     f"Inference/writeback count mismatch for project='{project}', "
-                    f"filename='{filename}', region_id='{region_id}', line_id='{line_id}': "
-                    f"{len(texts)} predictions for {len(matching_indices)} matching rows. "
+                    f"filename='{filename}', region_id='{region_id}', "
+                    f"line_id='{line_id}': "
+                    f"{len(texts)} predictions for "
+                    f"{len(matching_indices)} matching rows. "
                     f"Writing up to the smaller count."
                 )
 
@@ -403,30 +369,48 @@ class Inference:
                 updated_df.at[row_index, new_col] = text
                 updated_count += 1
 
-        logger.info(f"Created column '{new_col}' and updated {updated_count} rows.")
+        logger.info(
+            f"Created column '{new_col}' and updated {updated_count} rows."
+        )
         return updated_df
 
-    def save_results(self,
-                     inferred_lines: Dict[tuple[str, str, str, str], List[str]],
-                     original_df: pd.DataFrame) -> pd.DataFrame:
+    def save_results(
+            self,
+            inferred_lines: Dict[tuple[str, str, str, str], List[str]],
+            original_df: pd.DataFrame,
+            inference_column: Optional[str] = None,
+    ) -> pd.DataFrame:
         """Save inference predictions to a DataFrame.
 
         Args:
-            inferred_lines: Mapping from line identity keys to predicted text strings.
-            original_df: Original split DataFrame to update.
+            inferred_lines:
+                Mapping from line identity keys to predicted text strings.
+            original_df:
+                Original split DataFrame to update.
+            inference_column:
+                Shared inference column name for the current inference run.
+                If omitted, a new timestamped name is generated.
 
         Returns:
-            Updated DataFrame containing a new inference result column.
+            Updated DataFrame containing the inference result column.
 
         Raises:
             Exception: If writing inference results fails.
         """
-        logger.info("Saving inference results into DataFrame and updating XML fields.")
+        logger.info(
+            "Saving inference results into DataFrame and updating XML fields."
+        )
 
         try:
-            df_with_inference = self.write_inference_to_dataframe(inferred_lines, original_df)
+            df_with_inference = self.write_inference_to_dataframe(
+                inferred_lines=inferred_lines,
+                original_df=original_df,
+                inference_column=inference_column,
+            )
 
-            logger.info("Inference results successfully written to DataFrame.")
+            logger.info(
+                "Inference results successfully written to DataFrame."
+            )
             return df_with_inference
 
         except Exception as e:
