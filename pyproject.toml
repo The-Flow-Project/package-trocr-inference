@@ -36,7 +36,7 @@ dependencies = [
     "setuptools>=78.1",
     "jiwer>=3.0.4",
     "protobuf>=4.25.0",
-    "sentencepiece>=0.2.0",
+    "sentencepiece==0.2.0",
 ]
 
 keywords = [
@@ -117,3 +117,12 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --strict-markers --tb=short --color=yes"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
