@@ -27,10 +27,17 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
 
     def setUp(self):
         load_dotenv()
-        self.raw_repo = os.getenv("RAW_XML_REPO")
-        self.inference_repo = os.getenv("INFERENCE_REPO")
-        self.token = os.getenv("HUGGINGFACE_TOKEN_READ_WRITE")
-        self.upload_repo = os.getenv("UPLOAD_RAW_XML_REPO")
+        env_raw = os.getenv("RAW_XML_REPO")
+        env_inference = os.getenv("INFERENCE_REPO")
+        env_token = os.getenv("HUGGINGFACE_TOKEN_READ_WRITE")
+        env_upload = os.getenv("UPLOAD_RAW_XML_REPO")
+        # Real HF integration tests skip unless every variable is configured;
+        # mocked unit tests fall back to distinct placeholder repo ids.
+        self.has_hf_env = all([env_raw, env_inference, env_token, env_upload])
+        self.raw_repo = env_raw or "test-org/raw-xml"
+        self.inference_repo = env_inference or "test-org/inference"
+        self.token = env_token or "dummy-token"
+        self.upload_repo = env_upload or "test-org/upload-raw-xml"
 
         self.writer = InferenceToRawXMLWriter(
             raw_xml_repo=self.raw_repo,
@@ -65,8 +72,8 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         return path
 
     def _unique_upload_repo_name(self, suffix: str) -> str:
-        if not self.upload_repo:
-            self.skipTest("Missing UPLOAD_RAW_XML_REPO.")
+        if not self.has_hf_env:
+            self.skipTest("Missing HF integration configuration.")
 
         namespace = self.upload_repo.rsplit("/", 1)[0]
         safe_suffix = suffix.replace("_", "-")
@@ -566,7 +573,7 @@ class TestInferenceToRawXMLWriter(unittest.TestCase):
         REAL integration test (HF Hub).
         Requires valid env vars.
         """
-        if not self.raw_repo or not self.inference_repo or not self.token or not self.upload_repo:
+        if not self.has_hf_env:
             self.skipTest("Missing HF integration configuration")
 
         target_repo = self._unique_upload_repo_name("writeback")

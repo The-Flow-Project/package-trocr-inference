@@ -448,9 +448,9 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
             text = "\n".join(lines)
 
             self.assertIn("## Duplicate Line Information", text)
-            self.assertIn("**Duplicate rows**: 5", text)
-            self.assertIn("**Duplicate groups**: 2", text)
-            self.assertIn("**Duplicate excess rows**: 3", text)
+            self.assertIn("- Duplicate rows: 5", text)
+            self.assertIn("- Duplicate groups: 2", text)
+            self.assertIn("- Duplicate excess rows: 3", text)
             self.assertIn("**train**: 2 duplicate rows, 1 duplicate groups, 1 duplicate excess rows", text)
             self.assertIn("**test**: 3 duplicate rows, 1 duplicate groups, 2 duplicate excess rows", text)
             self.assertIn("`filename`, `region_id`, and `line_id`", text)
@@ -477,9 +477,9 @@ class TestHuggingFaceReadmeBuilder(unittest.TestCase):
             readme = builder.render()
 
             self.assertIn("## Duplicate Line Information", readme)
-            self.assertIn("- **Duplicate rows**: 2", readme)
-            self.assertIn("- **Duplicate groups**: 1", readme)
-            self.assertIn("- **Duplicate excess rows**: 1", readme)
+            self.assertIn("- Duplicate rows: 2", readme)
+            self.assertIn("- Duplicate groups: 1", readme)
+            self.assertIn("- Duplicate excess rows: 1", readme)
             self.assertIn("- **train**: 2 duplicate rows, 1 duplicate groups, 1 duplicate excess rows", readme)
 
 
